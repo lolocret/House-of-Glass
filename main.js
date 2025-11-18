@@ -1,0 +1,1347 @@
+// The House of Glass — main.js
+// Expose startExperience() which initializes the Three.js scene and audio
+// only after a user gesture (Enter button). Import Three.js from CDN.
+
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// The House of Glass — interactive infographic core
+// Exports: startExperience(opts) and speakLine(text)
+
+let started = false;
+let renderer, scene, camera, clock;
+let raycaster = new THREE.Raycaster();
+let pointer = new THREE.Vector2();
+let particleGeo, particleCount = 160;
+const sections = [
+	{
+		id: 'hall',
+		label: "Hall d'entrée",
+		copy: "Traverse l'atrium et choisis ta prochaine pièce à explorer.",
+		slug: null,
+		center: { x: 0, z: 0 },
+		size: { w: 4.6, h: 4.6 },
+		story: {
+			title: "Hall d'entrée",
+			body: "C'est ici que la Maison de Verre s'ouvre. Observe les reflets et choisis une pièce.",
+			cta: "Entrer dans le salon des réseaux",
+			target: 1
+		}
+	},
+	{
+		id: 'social',
+		label: "Salon des Réseaux",
+		copy: "Publier, liker, scroller : observe comment tes interactions dessinent ton double social.",
+		slug: 'social',
+		center: { x: -4.4, z: 0 },
+		size: { w: 4.6, h: 4.6 },
+		story: {
+			title: "Salon des Réseaux",
+			body: "Choisis 3 posts fictifs à publier et vois la fiche de profil marketing qui en résulte.",
+			cta: "Passer à la cuisine des achats",
+			target: 2
+		}
+	},
+	{
+		id: 'commerce',
+		label: "Cuisine des Achats",
+		copy: "Chaque panier ou abonnement révèle ton pouvoir d'achat, tes routines et tes priorités.",
+		slug: 'commerce',
+		center: { x: 4.4, z: 0 },
+		size: { w: 4.6, h: 4.6 },
+		story: {
+			title: "Cuisine des Achats",
+			body: "Compose un panier fictif et observe comment il se transforme en score socio-éco.",
+			cta: "Explorer le couloir des déplacements",
+			target: 3
+		}
+	},
+	{
+		id: 'mobility',
+		label: "Couloir des Déplacements",
+		copy: "Géolocalisations, trajets et check-ins cartographient ton territoire intime.",
+		slug: 'mobility',
+		center: { x: -4.4, z: -4.4 },
+		size: { w: 4.6, h: 4.6 },
+		story: {
+			title: "Couloir des Déplacements",
+			body: "Trace un trajet et vois ce qu'il révèle (domicile, habitudes, réseau).",
+			cta: "Entrer dans la chambre des données sensibles",
+			target: 4
+		}
+	},
+	{
+		id: 'sensibles',
+		label: "Chambre des Données sensibles",
+		copy: "Santé, humeur, messages privés : la loi les protège, mais ils circulent encore.",
+		slug: 'sensibles',
+		center: { x: 4.4, z: -4.4 },
+		size: { w: 4.6, h: 4.6 },
+		story: {
+			title: "Chambre des Données sensibles",
+			body: "Active/désactive les permissions (santé, sommeil, messages) et regarde ce que l'IA déduit.",
+			cta: "Aller au bureau de contrôle",
+			target: 5
+		}
+	},
+	{
+		id: 'control',
+		label: "Bureau de contrôle",
+		copy: "Synthèse : combine tes pièces et décide ce que tu veux garder, effacer, corriger.",
+		slug: 'control',
+		center: { x: 0, z: -4.4 },
+		size: { w: 4.6, h: 4.6 },
+		story: {
+			title: "Bureau de contrôle",
+			body: "Regarde ton profil marketing se stabiliser. Tu peux couper les sources ou exporter des actions concrètes.",
+			cta: null,
+			target: null
+		}
+	}
+];
+let currentSection = 0;
+let audioCtxNode = null; // if we create WebAudio fallback
+const moveState = { forward:false, back:false, left:false, right:false };
+const heroBounds = { minX: -10, maxX: 10, minZ: -10, maxZ: 10 };
+const allowedZones = [];
+const heroVelocity = new THREE.Vector3();
+const heroDirection = new THREE.Vector3();
+const lookTarget = new THREE.Vector3(0, 1.2, 0);
+const desiredLook = new THREE.Vector3();
+const heroStep = new THREE.Vector3();
+const zeroVec = new THREE.Vector3();
+let gltfCharacter = null;
+let gltfMixer = null;
+let gltfIdleAction = null;
+let useProceduralSwing = false; // true if no GLTF animation available
+let cameraOffset = { distance: 7, height: 3.5, lag: 0.12, min: 3, max: 12 };
+const moveSpeeds = { walk: 3.0 };
+let camYaw = -Math.PI/3.5;
+let camYawTarget = 0;
+let camDrag = false;
+let camLastX = 0;
+const tmpForward = new THREE.Vector3();
+const tmpRight = new THREE.Vector3();
+const zones = [];
+let voiceEnabled = false;
+
+const interactionState = {
+	social: [],
+	commerce: [],
+	mobility: null,
+	sensibles: [],
+	control: null
+};
+
+const socialPosts = [
+	{ label: "Story festival & amis", inference: "Profil culture + sociable", note: "Ciblage sorties nocturnes et partenariats événementiels." },
+	{ label: "Thread coup de gueule politique", inference: "Positionnement engagé", note: "Peut déclencher du contenu polarisé ou du microciblage militant." },
+	{ label: "VLOG routine sport + smoothies", inference: "Style de vie healthy premium", note: "Associe ta data à des marques fitness et compléments." },
+	{ label: "Mèmes sur la procrastination", inference: "Catégorie 'étudiant stressé'", note: "Propension à consommer des apps de productivité payantes." },
+	{ label: "Haul vêtements éthiques", inference: "Purchase intent mode responsable", note: "Proposition de cartes bancaires vertes et néobanques." }
+];
+
+const commerceItems = [
+	{ label: "Panier bio + livraison de paniers", insight: "Budget alimentation supérieur à la moyenne, appétence pour abonnements durables." },
+	{ label: "Abonnement gaming + achats in-app", insight: "Profil gamer intensif, propension à accepter des offres de crédit rapide." },
+	{ label: "Billets low-cost + hôtels week-end", insight: "Voyageur fréquent, ciblage assurance annulation + cartes multi-devises." },
+	{ label: "Box beauté clean + parapharmacie", insight: "Soins haut de gamme, intérêt pour produits santé personnalisés." },
+	{ label: "Commandes fast-food tardives", insight: "Rythme irrégulier, push de livraison express et offres nocturnes." }
+];
+
+const mobilityRoutes = [
+	{ route: "Domicile → coworking → salle de sport → bar", deductions: ["Horaires 8h-22h", "Réseau social urbain", "Ciblage transports multimodes"] },
+	{ route: "Campus → stage → bibliothèque", deductions: ["Statut étudiant·e", "Temps passé en zone académique", "Ciblage bourses et banques jeunes"] },
+	{ route: "Maison → école → supermarché → maison", deductions: ["Probable parent", "Crénaux 7h30/16h30", "Ciblage assurances famille"] }
+];
+
+const sensitivePermissions = [
+	{ label: "Suivi du sommeil (8h)", impact: "Indice de fatigue et productivité transmis aux partenaires bien-être." },
+	{ label: "Journal humeur quotidien", impact: "Profil émotionnel exploitable pour scoring de stabilité." },
+	{ label: "Historique messageries chiffrées", impact: "Métadonnées révélant relations intimes malgré chiffrement du contenu." },
+	{ label: "Capteurs santé (coeur, SPO2)", impact: "Peut influencer primes assurance ou prêts santé." }
+];
+
+const controlActions = [
+	{ action: "Télécharger tes données", impact: "Tu récupères un export complet pour vérifier ce qui circule." },
+	{ action: "Activer l'authentification forte", impact: "Réduit les reprises de comptes et les doubles connexions suspectes." },
+	{ action: "Programmer des rappels de nettoyage", impact: "Tous les 90 jours tu purges recherches, historiques et paniers." },
+	{ action: "Segmenter tes identités (pseudo/email)", impact: "Évite la corrélation automatique entre achats, loisirs et santé." }
+];
+
+function randomFrom(list){
+	return list[Math.floor(Math.random() * list.length)];
+}
+
+function pickSome(list, count){
+	const pool = [...list];
+	const result = [];
+	for (let i=0; i<count && pool.length; i++){
+		const idx = Math.floor(Math.random() * pool.length);
+		result.push(pool.splice(idx,1)[0]);
+	}
+	return result;
+}
+
+const roomAccent = {
+	hall: 0xbee9ff,
+	social: 0xffbfe9,
+	commerce: 0xfff1bf,
+	mobility: 0xbfe7ff,
+	sensibles: 0xdcc7ff,
+	control: 0xcaf7d7
+};
+
+const dataPieces = [
+	{
+		slug: "social",
+		title: "Salon des Réseaux",
+		intro: "Stories, likes, watch time et DM construisent un double numérique plus bavard que toi.",
+		insights: [
+			"Les algorithmes infèrent opinions politiques, humeur du jour et niveau d'engagement à partir des signaux faibles.",
+			"Les contacts fréquents permettent de cartographier ton réseau social et d'estimer ton influence.",
+			"Les stories géolocalisées dévoilent une routine quotidienne exploitable par les annonceurs."
+		],
+		color: "#ffb3ec"
+	},
+	{
+		slug: "commerce",
+		title: "Cuisine des Achats",
+		intro: "Chaque panier, abonnement ou livraison renseigne ton pouvoir d'achat et tes rituels.",
+		insights: [
+			"Les achats récurrents dessinent un score socio-économique qui alimente le profilage pub.",
+			"Les livraisons temporelles (soir/matin) dévoilent rythme et contraintes personnelles.",
+			"Partager un programme de fidélité croise tes goûts avec ceux de milliers d'utilisateurs similaires."
+		],
+		color: "#ffd68f"
+	},
+	{
+		slug: "mobility",
+		title: "Couloir des Déplacements",
+		intro: "Les traces GPS, trajets et bornes Wi-Fi dessinent ton territoire intime.",
+		insights: [
+			"Deux semaines de positions suffisent pour repérer domicile, études/travail et lieux sensibles.",
+			"Les horaires de déplacement révèlent si tu vis seul·e, en colocation ou en famille.",
+			"La synchronisation avec d'autres appareils permet de déduire ton cercle proche."
+		],
+		color: "#aee6ff"
+	},
+	{
+		slug: "sensibles",
+		title: "Chambre des Confidences",
+		intro: "Santé, sommeil, journaling et messageries privées sont classés \"données sensibles\".",
+		insights: [
+			"Ces données exigent un consentement explicite (RGPD art.9) mais beaucoup d'apps les recopient vers des serveurs tiers.",
+			"Le croisement humeur + achats + sommeil alimente des scores de stabilité émotionnelle.",
+			"Une fuite de ces traces peut impacter assurances, employabilité ou réputation."
+		],
+		color: "#d0c5ff"
+	},
+	{
+		slug: "control",
+		title: "Bureau de Contrôle",
+		intro: "Ici, le profil consolidé se projette à l'écran et tu peux décider quoi couper ou corriger.",
+		insights: [
+			"Combine les droits RGPD (accès, rectification, portabilité, effacement) pour reprendre la main.",
+			"Paramètre chaque grande plateforme : confidentialité, pubs personnalisées, historique de localisation.",
+			"Active des outils de prévention (navigateurs privés, gestionnaires de permissions, bloqueurs de pisteurs)."
+		],
+		color: "#f1ffb5"
+	}
+];
+
+const roomChoices = {
+	social: [
+		{ label: "Selfies + stories géolocalisées", result: ["Profil 'social actif'", "Publicités sorties/bars + ciblage lieu de vie"] },
+		{ label: "Thread militant + sondage", result: ["Profil engagé", "Micro-ciblage politique et causes"] },
+		{ label: "VLOG sport + recettes", result: ["Style de vie healthy premium", "Partenariats fitness, compléments"] }
+	],
+	commerce: [
+		{ label: "Panier bio + box beauté", result: ["Score socio-éco élevé", "Recommandations cosmétiques clean"] },
+		{ label: "Gaming + fast-food nocturne", result: ["Profil gamer tardif", "Offres livraison express, crédits rapide"] },
+		{ label: "Voyages low-cost + hôtels", result: ["Voyageur fréquent", "Assurances annulation, cartes multi-devises"] }
+	],
+	mobility: [
+		{ label: "Domicile ↔ bureau ↔ salle", result: ["Routine 8h-22h", "Ciblage transports/mobilité douce"] },
+		{ label: "Campus ↔ stage ↔ bibliothèque", result: ["Statut étudiant", "Banques jeunes, bourses"] },
+		{ label: "École ↔ courses ↔ maison", result: ["Probable parent", "Assurances famille, drive"] }
+	],
+	sensibles: [
+		{ label: "Activer sommeil + humeur", result: ["Profil émotionnel fin", "Risque fuite data sensible (assurances)"] },
+		{ label: "Capteurs santé + journal", result: ["Score bien-être avancé", "Partage potentiel vers tiers"] },
+		{ label: "Messageries + notes privées", result: ["Métadonnées relationnelles", "Profil social intime déduit"] }
+	],
+	control: [
+		{ label: "Exporter mes données", result: ["Export complet récupéré", "Tu peux vérifier ce qui circule"] },
+		{ label: "Couper pubs personnalisées", result: ["Ciblage générique", "Moins de profilage comportemental"] },
+		{ label: "Nettoyage 90 jours", result: ["Purge recherches/historiques", "Réduit la rétention involontaire"] }
+	]
+};
+
+const roomActions = {
+	social: {
+		label: "Publier 3 posts",
+		handler: () => {
+			const picks = pickSome(socialPosts, 3);
+			const summary = picks.map(p => `• ${p.label} → ${p.inference}`).join('\n');
+			const highlight = picks[Math.floor(Math.random() * picks.length)];
+			return {
+				title: "Fiche générée",
+				lines: [
+					`Posts choisis : ${picks.map(p => p.label).join(', ')}`,
+					`Déduction clé : ${highlight.note}`,
+					`Catégorie annoncée : ${highlight.inference}`
+				]
+			};
+		}
+	},
+	commerce: {
+		label: "Composer un panier",
+		handler: () => {
+			const picks = pickSome(commerceItems, 2);
+			return {
+				title: "Profil panier",
+				lines: picks.map(p => `• ${p.label} — ${p.insight}`)
+			};
+		}
+	},
+	mobility: {
+		label: "Tracer un trajet",
+		handler: () => {
+			const pick = randomFrom(mobilityRoutes);
+			return {
+				title: "Lecture du trajet",
+				lines: [
+					`Itinéraire : ${pick.route}`,
+					...pick.deductions
+				]
+			};
+		}
+	},
+	sensibles: {
+		label: "Modifier les permissions",
+		handler: () => {
+			const picks = pickSome(sensitivePermissions, 3);
+			return {
+				title: "Impact des permissions",
+				lines: picks.map(p => `• ${p.label} : ${p.impact}`)
+			};
+		}
+	},
+	control: {
+		label: "Appliquer une action",
+		handler: () => {
+			const pick = randomFrom(controlActions);
+			return {
+				title: "Action recommandée",
+				lines: [
+					`Action : ${pick.action}`,
+					`Effet : ${pick.impact}`
+				]
+			};
+		}
+	}
+};
+
+const defaultInfo = {
+	title: "Choisis une trace",
+	intro: "Clique sur une capsule de verre pour matérialiser ce que tu révèles.",
+	insights: [
+		"Chaque pièce correspond à une famille de données personnelles.",
+		"Les bulles se combinent pour alimenter un profil marketing complet.",
+		"Utilise la molette ou la navigation pour visiter tout le manoir."
+	]
+};
+
+const keyBindings = {
+	KeyW: "forward",
+	KeyZ: "forward",
+	ArrowUp: "forward",
+	KeyS: "back",
+	ArrowDown: "back",
+	KeyA: "left",
+	KeyQ: "left",
+	ArrowLeft: "left",
+	KeyD: "right",
+	ArrowRight: "right"
+};
+
+function handleMoveKey(e, isDown){
+	const dir = keyBindings[e.code];
+	if (!dir) return;
+	if (e.repeat) return;
+	moveState[dir] = isDown;
+	if (e.code.startsWith("Arrow")) e.preventDefault();
+}
+
+function resetMovement(){
+	Object.keys(moveState).forEach(k => moveState[k] = false);
+	heroVelocity.set(0,0,0);
+}
+
+export function speakLine(text, voice = null) {
+	if (!voiceEnabled || !window.speechSynthesis) return; // optional
+	const utter = new SpeechSynthesisUtterance(text);
+	utter.rate = 0.9;
+	utter.volume = 0.9;
+	utter.pitch = 1.0;
+	if (voice) utter.voice = voice;
+	window.speechSynthesis.speak(utter);
+}
+
+function createDramaticAudio() {
+	// layered pad using WebAudio as fallback if <audio> not provided
+	const ctx = new (window.AudioContext || window.webkitAudioContext)();
+	const g = ctx.createGain(); g.gain.value = 0.0; g.connect(ctx.destination);
+	const freqs = [65, 92, 150];
+	const oscillators = freqs.map(f => {
+		const osc = ctx.createOscillator();
+		osc.type = 'sawtooth';
+		osc.frequency.value = f;
+		return osc;
+	});
+	const lfo = ctx.createOscillator(); lfo.frequency.value = 0.06;
+	const lfoGain = ctx.createGain(); lfoGain.gain.value = 15;
+	const filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 900;
+	lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+	oscillators.forEach(osc => osc.connect(filter));
+	filter.connect(g);
+	oscillators.forEach(osc => osc.start());
+	lfo.start();
+
+	audioCtxNode = { ctx, oscillators, lfo, gain: g };
+	g.gain.linearRampToValueAtTime(0.55, ctx.currentTime + 3);
+}
+
+function stopDramaticAudio(){
+	if (!audioCtxNode) return;
+	const { ctx, oscillators, lfo, gain } = audioCtxNode;
+	gain.gain.linearRampToValueAtTime(0.0, ctx.currentTime + 1.0);
+	setTimeout(()=>{ try{ oscillators.forEach(o=>o.stop()); lfo.stop(); ctx.close(); }catch(e){} }, 1200);
+	audioCtxNode=null;
+}
+
+function makeCanvasTexture(text, opts = {}){
+	const w = opts.w||512, h = opts.h||256; const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.clearRect(0,0,w,h);
+	// background translucent
+	ctx.fillStyle = opts.bg || 'rgba(255,255,255,0.02)'; ctx.fillRect(0,0,w,h);
+	ctx.fillStyle = opts.color || '#e2f9ff'; ctx.font = `${opts.fontSize||36}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text, w/2, h/2);
+	const tex = new THREE.CanvasTexture(canvas); tex.needsUpdate = true; return tex;
+}
+
+function makeTiledTexture(opts = {}){
+	const size = opts.size || 256;
+	const colors = opts.colors || ['#7fcf9c', '#6abf8a'];
+	const canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size;
+	const ctx = canvas.getContext('2d');
+	ctx.fillStyle = colors[0]; ctx.fillRect(0,0,size,size);
+	ctx.fillStyle = colors[1];
+	for (let i=0;i<80;i++){
+		const x = Math.random()*size;
+		const y = Math.random()*size;
+		const r = 2 + Math.random()*6;
+		ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+	}
+	const tex = new THREE.CanvasTexture(canvas);
+	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+	tex.repeat.set(opts.repeatU || 8, opts.repeatV || 8);
+	tex.needsUpdate = true;
+	return tex;
+}
+
+function createHouseStructure(group, interactiveCollector = []){
+	const base = new THREE.MeshPhysicalMaterial({ transmission: 0.6, transparent:true, opacity:0.9, roughness:0.15, ior:1.45, clearcoat:0.35 });
+	const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 12), new THREE.MeshStandardMaterial({ color:0x24162d, roughness:0.3, metalness:0.35 }));
+	floor.rotation.x = -Math.PI/2;
+	floor.position.z = -2;
+	group.add(floor);
+
+	// Light beams au plafond (effet néon)
+	const beamMat = new THREE.MeshStandardMaterial({ color:0xff9ce8, emissive:0xff8de0, emissiveIntensity:0.4, transparent:true, opacity:0.35 });
+	for (let i=0;i<3;i++){
+		const beam = new THREE.Mesh(new THREE.BoxGeometry(16,0.08,0.6), beamMat);
+		beam.position.set(0,3.0,-i*4);
+		group.add(beam);
+	}
+
+	sections.forEach((section, idx) => {
+		const zone = new THREE.Group();
+		zone.position.set(section.center.x, 0, section.center.z);
+		const w = section.size.w;
+		const h = section.size.h;
+		section.bounds = {
+			minX: section.center.x - w/2,
+			maxX: section.center.x + w/2,
+			minZ: section.center.z - h/2,
+			maxZ: section.center.z + h/2
+		};
+		allowedZones.push(section.bounds);
+
+	const padColor = roomAccent[section.id] || 0xffffff;
+		const pad = new THREE.Mesh(new THREE.PlaneGeometry(w-0.4, h-0.4), new THREE.MeshBasicMaterial({ color: padColor, transparent:true, opacity:0.35 }));
+		pad.rotation.x = -Math.PI/2;
+		pad.position.set(0,0.01,0);
+		zone.add(pad);
+
+		const lowWall = new THREE.Mesh(new THREE.BoxGeometry(w-0.3, 0.4, h-0.3), new THREE.MeshPhysicalMaterial({ color: padColor, transparent:true, opacity:0.18, roughness:0.15 }));
+		lowWall.position.set(0,0.2,0);
+		zone.add(lowWall);
+
+		const labelTex = makeCanvasTexture(section.label.toUpperCase(), { fontSize: 28, color: '#ffffff' });
+		const labelMat = new THREE.MeshPhysicalMaterial({ map: labelTex, transparent:true, opacity:0.9, transmission:0.4 });
+		labelMat.map.encoding = THREE.sRGBEncoding;
+		const label = new THREE.Mesh(new THREE.PlaneGeometry(2.8,0.8), labelMat);
+		label.position.set(0, 2.0, h/2 + 0.1);
+		zone.add(label);
+		const doorHeight = 2.2;
+		const doorWidth = 1.3;
+		['N','S','E','W'].forEach((dir)=>{
+			const door = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, doorHeight, 0.1), new THREE.MeshStandardMaterial({ color:0xffffff, transparent:true, opacity:0.05 }));
+			if (dir==='N'){ door.position.set(0, doorHeight/2, -h/2); }
+			if (dir==='S'){ door.position.set(0, doorHeight/2, h/2); }
+			if (dir==='E'){ door.position.set(w/2, doorHeight/2, 0); door.rotation.y = Math.PI/2; }
+			if (dir==='W'){ door.position.set(-w/2, doorHeight/2, 0); door.rotation.y = Math.PI/2; }
+			zone.add(door);
+		});
+
+		if (section.slug){
+			addHotspotsForSection(section, zone, interactiveCollector);
+		}else if (section.id === 'hall'){
+			addHallInstallations(zone);
+		}else if (section.id === 'control'){
+			addControlDesk(zone);
+		}
+		addRoomProps(section, zone);
+		group.add(zone);
+		zones[idx] = zone;
+	});
+
+	// corridors / portes entre pièces pour navigation fluide
+	const connectors = [
+		['hall','social'], ['hall','commerce'], ['hall','control'],
+		['hall','mobility'], ['hall','sensibles'],
+		['social','mobility'], ['commerce','sensibles'], ['control','mobility'], ['control','sensibles']
+	];
+	connectors.forEach(pair => {
+		const a = sections.find(s=>s.id===pair[0]);
+		const b = sections.find(s=>s.id===pair[1]);
+		if (!a || !b) return;
+		// rectangle entre les centres
+		const cx = (a.center.x + b.center.x)/2;
+		const cz = (a.center.z + b.center.z)/2;
+		const w = Math.abs(a.center.x - b.center.x) > 0.1 ? 1.6 : Math.max(a.size.w, b.size.w) * 0.28;
+		const h = Math.abs(a.center.z - b.center.z) > 0.1 ? 1.6 : Math.max(a.size.h, b.size.h) * 0.28;
+		allowedZones.push({
+			minX: cx - w/2,
+			maxX: cx + w/2,
+			minZ: cz - h/2,
+			maxZ: cz + h/2
+		});
+	});
+}
+
+function addHallInstallations(zone){
+	const words = ['TRACE','MURMUR','PROFILE','INTENTION','MIRROR','ECHO'];
+	for (let i =0; i<6; i++){
+		const tex = makeCanvasTexture(words[i], { fontSize: 48, color: '#cfefff' });
+		const mat = new THREE.MeshPhysicalMaterial({ map: tex, transmission:0.5, transparent:true, opacity:0.8 });
+		mat.map.encoding = THREE.sRGBEncoding;
+		const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.6,1.0), mat);
+		plane.position.set(i%2? -1.6:1.6, 1.4, -1.5 - i*0.6);
+		plane.rotation.y = i%2? 0.25 : -0.25;
+		zone.add(plane);
+	}
+}
+
+function addControlDesk(zone){
+	const base = new THREE.MeshPhysicalMaterial({ color:0xf7f9ff, transmission:0.6, transparent:true, opacity:0.9 });
+	const desk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.5, 1.2), base);
+	desk.position.set(0, 0.4, 0);
+	zone.add(desk);
+	const holo = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.08, 0.8), new THREE.MeshStandardMaterial({ color:0x9fe8ff, emissive:0x7fd8ff, transparent:true, opacity:0.8 }));
+	holo.position.set(0, 0.9, 0);
+	zone.add(holo);
+	const chair = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.22,0.65,24), new THREE.MeshPhysicalMaterial({ color:0xeef9ff, transmission:0.5, transparent:true }));
+	chair.position.set(0,0.35,0.85);
+	zone.add(chair);
+}
+
+function addHotspotsForSection(section, zone, interactiveCollector){
+	const piece = dataPieces.find(p => p.slug === section.slug);
+	if (!piece) return;
+	const tex = makeCanvasTexture(piece.title.toUpperCase(), { fontSize: 30, color: piece.color || '#fff' });
+	const mat = new THREE.MeshPhysicalMaterial({ map: tex, transparent:true, opacity:0.85, transmission:0.6, side:THREE.DoubleSide });
+	mat.map.encoding = THREE.sRGBEncoding;
+	const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.0), mat);
+	panel.position.set(0, 1.45, -0.2);
+	panel.userData = { slug: piece.slug };
+	zone.add(panel);
+	interactiveCollector.push(panel);
+
+	const orbMat = new THREE.MeshStandardMaterial({ color: piece.color || '#ffffff', emissive: piece.color || 0xffffff, emissiveIntensity: 0.45, transparent:true, opacity:0.9 });
+		const orbPositions = [
+			{ x: 1.2, z: 0 },
+			{ x: -1.2, z: 0 },
+			{ x: 0, z: -1.1 }
+		];
+	orbPositions.forEach(pos => {
+		const orb = new THREE.Mesh(new THREE.SphereGeometry(0.18, 32, 32), orbMat.clone());
+		orb.position.set(pos.x, 1.1, pos.z);
+		orb.userData = { slug: piece.slug };
+		zone.add(orb);
+		interactiveCollector.push(orb);
+	});
+}
+
+function addRoomProps(section, zone){
+	const glassMat = new THREE.MeshPhysicalMaterial({ color:0xffffff, transmission:0.7, transparent:true, opacity:0.65, roughness:0.1 });
+	const decoTex = makeTiledTexture({ colors:['#f9f3ff','#f5e8ff'], size:96, repeatU:3, repeatV:3 });
+	const decoMat = new THREE.MeshStandardMaterial({ map: decoTex, roughness:0.6, metalness:0.05, transparent:true, opacity:0.9 });
+	if (section.id === 'hall'){
+		const columnMat = glassMat.clone();
+		columnMat.opacity = 0.3;
+		for (let i=0;i<4;i++){
+			const column = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,2.6,24), columnMat);
+			column.position.set(i%2?1.9:-1.9,1.3,-1 - i*1.2);
+			zone.add(column);
+		}
+	}
+	if (section.id === 'social'){
+		const sofa = new THREE.Mesh(new THREE.BoxGeometry(2.2,0.5,0.8), decoMat.clone());
+		sofa.position.set(0,0.35,1.2);
+		zone.add(sofa);
+		const table = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,0.08,32), decoMat.clone());
+		table.position.set(0,0.55,0.4);
+		zone.add(table);
+		const screen = new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,0.05,32,1,true), new THREE.MeshStandardMaterial({ color:0xbbe4ff, transparent:true, opacity:0.45 }));
+		screen.rotation.x = Math.PI/2;
+		screen.position.set(0,1.8,-1.6);
+		zone.add(screen);
+	}
+	if (section.id === 'commerce'){
+		const island = new THREE.Mesh(new THREE.BoxGeometry(2.4,0.4,1.0), decoMat.clone());
+		island.position.set(0,0.3,0.4);
+		zone.add(island);
+		for (let i=0;i<3;i++){
+			const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,0.35,16), decoMat.clone());
+			jar.position.set(-0.8 + i*0.8,0.55,-0.9);
+			zone.add(jar);
+		}
+		const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.25,1.6,2.3), decoMat.clone());
+		shelf.position.set(-2.4,0.9,0);
+		zone.add(shelf);
+	}
+	if (section.id === 'mobility'){
+		const path = new THREE.Mesh(new THREE.PlaneGeometry(1.4,3.5), new THREE.MeshStandardMaterial({ color:0x9fe0ff, transparent:true, opacity:0.5, roughness:0.2 }));
+		path.rotation.x = -Math.PI/2;
+		path.position.set(0,0.01,-0.5);
+		zone.add(path);
+		const pylonMat = glassMat.clone();
+		pylonMat.opacity = 0.8;
+		for (let i=0;i<4;i++){
+			const pylon = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,1.2,12), pylonMat);
+			pylon.position.set(-1.6 + i*1.1,0.6,1.4);
+			zone.add(pylon);
+		}
+		const compass = new THREE.Mesh(new THREE.CircleGeometry(0.9,32), new THREE.MeshStandardMaterial({ color:0xbdefff, transparent:true, opacity:0.35 }));
+		compass.rotation.x = -Math.PI/2;
+		compass.position.set(0,0.02,1.2);
+		zone.add(compass);
+	}
+	if (section.id === 'sensibles'){
+		const bedBase = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.3,1.3), decoMat.clone());
+		bedBase.position.set(0,0.25,0.4);
+		zone.add(bedBase);
+		const canopy = new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.0,0.05,28), decoMat.clone());
+		canopy.rotation.x = Math.PI/2;
+		canopy.position.set(0,2.0,0.4);
+		zone.add(canopy);
+		const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.3,24,24), new THREE.MeshStandardMaterial({ color:0xfff0f8, emissive:0xffc2e8, emissiveIntensity:0.5, transparent:true, opacity:0.6 }));
+		lamp.position.set(1.4,1.6,-0.6);
+		zone.add(lamp);
+	}
+	if (section.id === 'control'){
+		const screens = new THREE.Mesh(new THREE.BoxGeometry(2.8,0.1,0.9), new THREE.MeshStandardMaterial({ color:0xcdfcff, emissive:0x9adfff, transparent:true, opacity:0.7 }));
+		screens.position.set(0,1.4,-0.6);
+		screens.rotation.x = -Math.PI/10;
+		zone.add(screens);
+	}
+}
+
+function createHumanoid(){
+	const g = new THREE.Group();
+	const skinMat = new THREE.MeshPhysicalMaterial({
+		color: 0xff7abf,
+		emissive: 0xff92d0,
+		emissiveIntensity: 0.08,
+		transmission: 0.4,
+		transparent: true,
+		roughness: 0.25
+	});
+	const fabricMat = new THREE.MeshPhysicalMaterial({
+		color: 0xffffff,
+		roughness: 0.9,
+		transmission: 0,
+		metalness: 0
+	});
+	const fluffMat = new THREE.MeshStandardMaterial({
+		color: 0xfff2df,
+		roughness: 0.95,
+		metalness: 0.05
+	});
+
+	const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22,0.7,8,16), skinMat);
+	torso.position.y = 1.05;
+	g.add(torso);
+
+	const top = new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,0.18,32), fabricMat);
+	top.position.set(0, 1.33, 0);
+	g.add(top);
+
+	const midriff = new THREE.Mesh(new THREE.TorusGeometry(0.33,0.04,16,48,Math.PI), fabricMat);
+	midriff.rotation.x = Math.PI/2;
+	midriff.position.set(0,1.22,0);
+	g.add(midriff);
+
+		const head = new THREE.Mesh(new THREE.SphereGeometry(0.3,32,32), skinMat);
+	head.position.y = 1.8;
+	g.add(head);
+
+	const earGeo = new THREE.CapsuleGeometry(0.08,0.45,6,12);
+	const earLeft = new THREE.Mesh(earGeo, skinMat);
+	earLeft.rotation.x = Math.PI/16;
+	earLeft.position.set(0.15,2.2,0);
+	g.add(earLeft);
+	const earRight = earLeft.clone();
+	earRight.position.x = -0.15;
+	g.add(earRight);
+
+	const hornGeo = new THREE.ConeGeometry(0.05,0.2,16);
+	const horn1 = new THREE.Mesh(hornGeo, skinMat);
+	horn1.position.set(0.08,2.05,0.06);
+	g.add(horn1);
+	const horn2 = horn1.clone();
+	horn2.position.x = -0.08;
+	g.add(horn2);
+
+	const hairRing = new THREE.Mesh(new THREE.TorusGeometry(0.4,0.12,24,60), fluffMat);
+	hairRing.position.set(0,1.85,0);
+	hairRing.rotation.x = Math.PI/2.4;
+	g.add(hairRing);
+	const hairRing2 = hairRing.clone();
+	hairRing2.scale.set(0.8,0.8,0.8);
+	hairRing2.position.y = 1.95;
+	g.add(hairRing2);
+
+	const hairBack = new THREE.Mesh(new THREE.SphereGeometry(0.32,24,24,0,Math.PI*2,0,Math.PI/1.2), fluffMat);
+	hairBack.position.set(0,1.8,-0.15);
+	g.add(hairBack);
+
+	const armGeo = new THREE.CylinderGeometry(0.05,0.045,0.8,16);
+	const armL = new THREE.Mesh(armGeo, skinMat);
+	armL.position.set(-0.35,1.05,0);
+	armL.rotation.z = Math.PI/7;
+	g.add(armL);
+	const armR = armL.clone();
+	armR.position.x = 0.35;
+	armR.rotation.z = -Math.PI/7;
+	g.add(armR);
+
+	const glove = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.16,16), fabricMat);
+	glove.position.set(-0.35,0.72,0);
+	g.add(glove);
+	const gloveR = glove.clone();
+	gloveR.position.x = 0.35;
+	g.add(gloveR);
+
+	const legGeo = new THREE.CylinderGeometry(0.07,0.06,1.0,18);
+	const legL = new THREE.Mesh(legGeo, fabricMat);
+	legL.position.set(-0.14,0.1,0);
+	g.add(legL);
+	const legR = legL.clone();
+	legR.position.x = 0.14;
+	g.add(legR);
+
+	const thighBand = new THREE.Mesh(new THREE.TorusGeometry(0.15,0.02,16,32), fabricMat);
+	thighBand.rotation.x = Math.PI/2;
+	thighBand.position.set(-0.15,0.72,0);
+	g.add(thighBand);
+	const thighBandR = thighBand.clone();
+	thighBandR.position.x = 0.15;
+	g.add(thighBandR);
+
+	const bootMat = new THREE.MeshStandardMaterial({ color:0xffefcc, roughness:0.95, metalness:0.05 });
+	const bootGeo = new THREE.BoxGeometry(0.32,0.3,0.5);
+	const bootL = new THREE.Mesh(bootGeo, bootMat);
+	bootL.position.set(-0.15,-0.3,0.1);
+	g.add(bootL);
+	const bootR = bootL.clone();
+	bootR.position.x = 0.15;
+	g.add(bootR);
+
+	g.userData.legs = [legL, legR];
+	g.userData.arms = [armL, armR];
+
+	return g;
+}
+
+async function createCharacterAvatar(parent){
+	const loader = new GLTFLoader();
+	const modelURL = './assets/lapin.glb'; // place your GLB model here
+	let avatar = null;
+	try{
+		const gltf = await loader.loadAsync(modelURL);
+		gltfCharacter = gltf.scene;
+		gltfCharacter.traverse((child) => {
+			if (child.isMesh){
+				child.castShadow = false;
+				child.receiveShadow = false;
+				if (child.material) child.material.transparent = true;
+			}
+		});
+		const box = new THREE.Box3().setFromObject(gltfCharacter);
+		const size = new THREE.Vector3();
+		box.getSize(size);
+		const scale = 2.1 / Math.max(size.x, size.y, size.z);
+		gltfCharacter.scale.setScalar(scale);
+		gltfCharacter.position.set(0, 0, sections[0].center ? sections[0].center.z : 0);
+		parent.add(gltfCharacter);
+
+		if (gltf.animations && gltf.animations.length){
+			gltfMixer = new THREE.AnimationMixer(gltfCharacter);
+			gltfIdleAction = gltfMixer.clipAction(gltf.animations[0]);
+			gltfIdleAction.play();
+			useProceduralSwing = false;
+		}else{
+			// pas d'animation : on appliquera un swing procédural
+			useProceduralSwing = true;
+		}
+		avatar = gltfCharacter;
+	}catch(err){
+		console.warn('GLTF model not found or failed to load, using procedural avatar.', err);
+		avatar = createHumanoid();
+		avatar.position.set(0,0,sections[0].center ? sections[0].center.z : 0);
+		parent.add(avatar);
+	}
+	avatar.userData.heading = 0;
+	return avatar;
+}
+
+function createParticles(scene){
+	particleGeo = new THREE.BufferGeometry();
+	const arr = new Float32Array(particleCount*3);
+	for (let i=0;i<particleCount;i++){ const r = 0.8 + Math.random()*4.0; const theta = Math.random()*Math.PI*2; arr[i*3] = Math.cos(theta)*r; arr[i*3+1] = 0.5 + Math.random()*2.4; arr[i*3+2] = Math.sin(theta)*r; }
+	particleGeo.setAttribute('position', new THREE.BufferAttribute(arr,3));
+	const mat = new THREE.PointsMaterial({ color:0xcff6ff, size:0.035, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending });
+	const pts = new THREE.Points(particleGeo, mat); scene.add(pts);
+}
+
+function addGlitchOverlay(){
+	const div = document.createElement('div'); div.className='glitch'; div.style.pointerEvents='none'; div.style.mixBlendMode='overlay'; document.body.appendChild(div);
+	return div;
+}
+
+function addEnvironment(scene){
+	// gradient skydome teinté néon
+	const skyGeo = new THREE.SphereGeometry(80, 32, 32);
+	const skyMat = new THREE.ShaderMaterial({
+		side: THREE.BackSide,
+		uniforms: {
+			topColor: { value: new THREE.Color(0x1b1230) },
+			bottomColor: { value: new THREE.Color(0x2c143d) },
+			offset: { value: 10 },
+			exponent: { value: 1.2 }
+		},
+		vertexShader: `
+			varying vec3 vWorldPosition;
+			void main() {
+				vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+				vWorldPosition = worldPosition.xyz;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+			}
+		`,
+		fragmentShader: `
+			uniform vec3 topColor;
+			uniform vec3 bottomColor;
+			uniform float offset;
+			uniform float exponent;
+			varying vec3 vWorldPosition;
+			void main() {
+				float h = normalize( vWorldPosition + offset ).y;
+				float mixVal = max( pow( max(h, 0.0), exponent ), 0.0 );
+				vec3 col = mix( bottomColor, topColor, mixVal );
+				gl_FragColor = vec4( col, 1.0 );
+			}
+		`
+	});
+	const sky = new THREE.Mesh(skyGeo, skyMat);
+	scene.add(sky);
+
+	const groundTex = makeTiledTexture({ colors:['#3b2a54','#2a1c3d'], size:256, repeatU:16, repeatV:12 });
+	const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ map: groundTex, roughness:0.8, metalness:0.05 }));
+	ground.rotation.x = -Math.PI/2;
+	ground.position.y = -0.02;
+	scene.add(ground);
+}
+
+function setupRenderer(){
+	renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true }); renderer.setPixelRatio(window.devicePixelRatio); renderer.setSize(window.innerWidth, window.innerHeight); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; renderer.domElement.style.position='fixed'; renderer.domElement.style.inset='0'; document.body.appendChild(renderer.domElement);
+}
+
+// Third-person follow camera (no orbit)
+function setupCameraAndControls(){
+	camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 200);
+	camera.position.set(0, cameraOffset.height, cameraOffset.distance);
+	renderer.domElement.addEventListener('contextmenu', (e)=> e.preventDefault());
+	renderer.domElement.addEventListener('pointerdown', (e)=> {
+		// clic gauche ou droit pour orienter la caméra
+		if (e.button === 0 || e.button === 2){ camDrag = true; camLastX = e.clientX; }
+	});
+	window.addEventListener('pointerup', ()=>{ camDrag = false; });
+	window.addEventListener('pointermove', (e)=> {
+		if (!camDrag) return;
+		const dx = e.clientX - camLastX;
+		camYawTarget -= dx * 0.01;
+		camLastX = e.clientX;
+		e.preventDefault();
+	});
+	window.addEventListener('wheel', (e)=> {
+		cameraOffset.distance = THREE.MathUtils.clamp(cameraOffset.distance + e.deltaY*0.002, cameraOffset.min, cameraOffset.max);
+		cameraOffset.height = THREE.MathUtils.clamp(cameraOffset.height + e.deltaY*0.0015, 1.0, 5.0);
+	}, { passive: true });
+}
+
+function onPointerMove(e){ pointer.x = (e.clientX / window.innerWidth) * 2 - 1; pointer.y = - (e.clientY / window.innerHeight) * 2 + 1; }
+
+function onClick(e, sceneObjs, onSelect){
+	raycaster.setFromCamera(pointer, camera);
+	const hits = raycaster.intersectObjects(sceneObjs, true);
+	if (hits.length){ const hit = hits[0].object;
+		gsap.to(hit.scale, { x:1.12, y:1.12, z:1.12, duration:0.18, yoyo:true, repeat:1 });
+		const p = new THREE.PointLight(0xffe8ff, 0.8, 3); p.position.copy(hit.getWorldPosition(new THREE.Vector3())); scene.add(p); gsap.to(p, { intensity:0, duration:0.8, onComplete: ()=> scene.remove(p) });
+		if (typeof onSelect === 'function') onSelect(hit);
+	}
+}
+
+function onWindowResize(){ if (!camera || !renderer) return; camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+
+export async function startExperience(opts = {}){
+	if (started) return; started = true;
+	const audioEl = opts.audioEl || null;
+	let audioDriver = 'none';
+	if (!audioEl){
+		createDramaticAudio();
+		audioDriver = 'synth';
+	}
+	else {
+		try{
+			await audioEl.play();
+			audioDriver = 'element';
+		}catch(e){
+			if (!audioCtxNode) createDramaticAudio();
+			audioDriver = 'synth';
+		}
+	}
+
+	scene = new THREE.Scene();
+	scene.fog = new THREE.FogExp2(0xeef8ff, 0.02);
+	addEnvironment(scene);
+	setupRenderer();
+	setupCameraAndControls();
+
+	const hemi = new THREE.HemisphereLight(0xfff6fb, 0xdfefff, 0.7); scene.add(hemi);
+	const main = new THREE.PointLight(0xdff6ff, 1.2, 20); main.position.set(0,3.6,0); scene.add(main);
+		sections.forEach(sec => {
+			const bar = new THREE.PointLight(roomAccent[sec.id] || 0xc8f0ff, 0.5, 7);
+			bar.position.set(sec.center.x, 2.5, sec.center.z);
+			scene.add(bar);
+			const spot = new THREE.SpotLight(roomAccent[sec.id] || 0xc8f0ff, 0.45, 6, Math.PI/3, 0.4, 1);
+			spot.position.set(sec.center.x, 2.8, sec.center.z);
+			spot.target.position.set(sec.center.x, 0, sec.center.z);
+			scene.add(spot);
+			scene.add(spot.target);
+		});
+
+	const interactiveObjects = [];
+	const house = new THREE.Group(); createHouseStructure(house, interactiveObjects); scene.add(house);
+
+	const humanoid = await createCharacterAvatar(house);
+
+	createParticles(scene);
+	const glitchEl = addGlitchOverlay();
+
+	const guideLabel = document.getElementById('sectionLabel');
+	const guideCopy = document.getElementById('sectionCopy');
+	const infoPanel = document.getElementById('infoPanel');
+	const infoTitle = document.getElementById('infoTitle');
+	const infoIntro = document.getElementById('infoIntro');
+	const infoList = document.getElementById('infoList');
+	const infoDynamic = document.getElementById('infoDynamic');
+	const primaryActionBtn = document.getElementById('primaryAction');
+	const teleportGrid = document.getElementById('teleportGrid');
+	const storyTitleEl = document.getElementById('storyTitle');
+	const storyBodyEl = document.getElementById('storyBody');
+	const storyCtaEl = document.getElementById('storyCta');
+	const hudBar = document.getElementById('hudBar');
+	const navQuick = document.getElementById('navQuick');
+	const muteToggle = document.getElementById('muteToggle');
+	const navButtons = [];
+	let uiShown = false;
+	let currentChoices = [];
+
+	function setInfoBySlug(slug = null){
+		if (!infoTitle || !infoIntro || !infoList) return;
+		const piece = dataPieces.find(item => item.slug === slug) || defaultInfo;
+		infoTitle.textContent = piece.title;
+		infoIntro.textContent = piece.intro;
+		infoList.innerHTML = '';
+		(piece.insights || []).forEach(text => {
+			const li = document.createElement('li');
+			li.textContent = text;
+			infoList.appendChild(li);
+		});
+		clearDynamicInfo();
+		updateActionButton(slug);
+		renderChoices(slug);
+		if (infoPanel){
+			infoPanel.classList.toggle('info-panel--active', Boolean(slug));
+		}
+	}
+
+	function clearDynamicInfo(){
+		if (infoDynamic) infoDynamic.innerHTML = '<p>Active une interaction dans cette pièce pour voir un exemple.</p>';
+		currentChoices = [];
+	}
+
+	function renderDynamicResult(result){
+		if (!infoDynamic) return;
+		if (!result){
+			clearDynamicInfo();
+			return;
+		}
+		const { title, lines = [] } = result;
+		infoDynamic.innerHTML = '';
+		if (title){
+			const h = document.createElement('h3');
+			h.textContent = title;
+			infoDynamic.appendChild(h);
+		}
+		lines.forEach(line => {
+			const p = document.createElement('p');
+			p.textContent = line;
+			infoDynamic.appendChild(p);
+		});
+	}
+
+	function renderChoices(slug){
+		if (!infoDynamic) return;
+		const choices = roomChoices[slug];
+		currentChoices = choices || [];
+		if (!choices){ clearDynamicInfo(); return; }
+		infoDynamic.innerHTML = '';
+		const wrap = document.createElement('div');
+		wrap.style.display = 'flex';
+		wrap.style.flexDirection = 'column';
+		wrap.style.gap = '6px';
+		choices.forEach((c, idx) => {
+			const btn = document.createElement('button');
+			btn.type = 'button';
+			btn.textContent = c.label;
+			btn.style.padding = '8px 10px';
+			btn.style.borderRadius = '10px';
+			btn.style.border = '1px solid rgba(255,255,255,0.2)';
+			btn.style.background = 'rgba(255,255,255,0.05)';
+			btn.style.color = '#f4fbff';
+			btn.style.cursor = 'pointer';
+			btn.addEventListener('click', ()=> {
+				renderDynamicResult({ title: 'Résultat', lines: c.result });
+				speakLine(c.result.join('. '));
+			});
+			wrap.appendChild(btn);
+		});
+		infoDynamic.appendChild(wrap);
+	}
+
+function updateActionButton(slug){
+	if (!primaryActionBtn) return;
+	const action = roomActions[slug];
+	if (action){
+		primaryActionBtn.disabled = false;
+		primaryActionBtn.textContent = action.label;
+	}else{
+		primaryActionBtn.disabled = true;
+		primaryActionBtn.textContent = 'Interagir';
+	}
+}
+
+	function updateGuide(idx){
+		const section = sections[idx] || sections[0];
+		if (guideLabel) guideLabel.textContent = section.label;
+		if (guideCopy) guideCopy.textContent = section.copy;
+	}
+
+	function updateStory(idx){
+		const section = sections[idx] || sections[0];
+		const node = section.story || {};
+		if (storyTitleEl) storyTitleEl.textContent = node.title || section.label;
+		if (storyBodyEl) storyBodyEl.textContent = node.body || section.copy;
+		if (!storyCtaEl) return;
+		if (node.cta && node.target !== null && node.target !== undefined){
+			storyCtaEl.textContent = node.cta;
+			storyCtaEl.dataset.target = node.target;
+			storyCtaEl.disabled = false;
+			storyCtaEl.style.display = 'inline-flex';
+		}else{
+			storyCtaEl.disabled = true;
+			storyCtaEl.dataset.target = '';
+			storyCtaEl.style.display = 'none';
+		}
+	}
+
+	function setActiveNav(idx){
+		navButtons.forEach((btn, i) => btn.classList.toggle('active', i === idx));
+	}
+
+	function buildNavQuick(){
+		if (!navQuick) return;
+		navQuick.innerHTML = '';
+		navButtons.length = 0;
+		sections.forEach((sec, idx) => {
+			const btn = document.createElement('button');
+			btn.type = 'button';
+			btn.textContent = sec.label;
+			btn.addEventListener('click', () => goTo(idx));
+			navQuick.appendChild(btn);
+			navButtons.push(btn);
+		});
+	}
+
+	function buildTeleport(){
+		if (!teleportGrid) return;
+		teleportGrid.innerHTML = '';
+		sections.forEach((sec, idx) => {
+			const btn = document.createElement('button');
+			btn.type = 'button';
+			btn.textContent = sec.label;
+			btn.addEventListener('click', () => {
+				teleportTo(idx);
+			});
+			teleportGrid.appendChild(btn);
+		});
+	}
+
+	function teleportTo(idx){
+		idx = THREE.MathUtils.clamp(idx, 0, sections.length-1);
+		const sec = sections[idx];
+		if (sec && sec.center){
+			humanoid.position.set(sec.center.x, humanoid.position.y, sec.center.z);
+			humanoid.userData.heading = 0;
+			humanoid.rotation.y = 0;
+			focusZone(idx);
+		}
+	}
+
+	function showUIOnce(){
+		if (uiShown) return;
+		const voiceToggle = document.getElementById('voiceToggle');
+		const teleportWrap = document.getElementById('teleport');
+		[infoPanel, hudBar].forEach(el=>{
+			if (!el) return;
+			el.style.opacity = '1';
+			el.style.pointerEvents = 'auto';
+		});
+		uiShown = true;
+	}
+
+	buildTeleport();
+	buildNavQuick();
+	focusZone(0, { force: true });
+	showUIOnce();
+
+	if (storyCtaEl){
+		storyCtaEl.addEventListener('click', () => {
+			const target = Number(storyCtaEl.dataset.target);
+			if (!Number.isNaN(target)) goTo(target);
+		});
+	}
+	if (primaryActionBtn){
+		primaryActionBtn.addEventListener('click', () => {
+			const section = sections[currentSection] || sections[0];
+			if (!section || !section.slug) return;
+			const action = roomActions[section.slug];
+			if (action && typeof action.handler === 'function'){
+				const result = action.handler();
+				renderDynamicResult(result);
+				if (result && result.lines) speakLine(result.lines.join('. '));
+			}
+		});
+	}
+	const voiceToggleBtn = document.getElementById('voiceToggle');
+	if (voiceToggleBtn){
+		voiceToggleBtn.addEventListener('click', ()=>{
+			voiceEnabled = !voiceEnabled;
+			voiceToggleBtn.textContent = voiceEnabled ? '🔊 Voix ON' : '🔇 Voix OFF';
+			voiceToggleBtn.setAttribute('aria-pressed', voiceEnabled ? 'true' : 'false');
+			if (!voiceEnabled && window.speechSynthesis){ window.speechSynthesis.cancel(); }
+		});
+	}
+	if (muteToggle){
+		muteToggle.addEventListener('click', ()=>{
+			voiceEnabled = !voiceEnabled;
+			muteToggle.textContent = voiceEnabled ? '🔊 Son ON' : '🔇 Son OFF';
+			muteToggle.setAttribute('aria-pressed', voiceEnabled ? 'true' : 'false');
+			if (!voiceEnabled && window.speechSynthesis){ window.speechSynthesis.cancel(); }
+		});
+	}
+
+	window.addEventListener('pointermove', onPointerMove);
+	window.addEventListener('click', (e)=> onClick(e, interactiveObjects, (hit)=> {
+		if (hit && hit.userData && hit.userData.slug){
+			setInfoBySlug(hit.userData.slug);
+			const piece = dataPieces.find(p=>p.slug===hit.userData.slug);
+			if (piece && piece.intro) speakLine(piece.intro);
+		}
+	}));
+	window.addEventListener('keydown', (e)=> handleMoveKey(e, true));
+	window.addEventListener('keyup', (e)=> handleMoveKey(e, false));
+
+	function focusZone(idx, opts = {}){
+		idx = THREE.MathUtils.clamp(idx, 0, sections.length-1);
+		const section = sections[idx] || sections[0];
+		const changed = idx !== currentSection || opts.force;
+		currentSection = idx;
+		// isoler la pièce (visibilité)
+		zones.forEach((z, i)=>{ if (z) z.visible = (i === idx); });
+		updateGuide(idx);
+		updateStory(idx);
+		setActiveNav(idx);
+		if (!opts.keepInfo || changed){
+			setInfoBySlug(section.slug || null);
+			if (section.copy) speakLine(section.copy);
+		}
+		if (section.fog !== undefined){
+			gsap.to(scene.fog, { density: section.fog, duration: 1.2 });
+		}
+	}
+
+	function goTo(idx){
+		focusZone(idx);
+		const section = sections[currentSection] || sections[0];
+		resetMovement();
+		if (section.center){
+			gsap.to(humanoid.position, { x: section.center.x, z: section.center.z, duration:1.2, ease:'power2.inOut' });
+		}
+	}
+
+	camera.lookAt(lookTarget);
+	clock = new THREE.Clock();
+	function animate(){ const dt = clock.getDelta(); const t = clock.getElapsedTime();
+		if (gltfMixer) gltfMixer.update(dt);
+
+		camYaw += (camYawTarget - camYaw) * 0.18;
+
+		const inputX = (moveState.right ? 1 : 0) - (moveState.left ? 1 : 0);
+		const inputZ = (moveState.forward ? 1 : 0) - (moveState.back ? 1 : 0);
+		// mouvement relatif à la caméra
+		// direction depuis la caméra vers le personnage pour éviter l'inversion
+		tmpForward.subVectors(lookTarget, camera.position);
+		tmpForward.y = 0; tmpForward.normalize();
+		tmpRight.crossVectors(tmpForward, new THREE.Vector3(0,1,0)).normalize();
+		heroDirection.copy(tmpForward).multiplyScalar(inputZ).add(tmpRight.clone().multiplyScalar(inputX));
+
+		let moving = false;
+		if (heroDirection.lengthSq() > 0){
+			heroDirection.normalize().multiplyScalar(moveSpeeds.walk);
+			moving = true;
+		} else {
+			heroDirection.set(0,0,0);
+		}
+		heroVelocity.lerp(heroDirection, 0.2);
+	heroStep.copy(heroVelocity).multiplyScalar(dt);
+
+	const nextPos = new THREE.Vector3(
+		THREE.MathUtils.clamp(humanoid.position.x + heroStep.x, heroBounds.minX, heroBounds.maxX),
+		humanoid.position.y,
+			THREE.MathUtils.clamp(humanoid.position.z + heroStep.z, heroBounds.minZ, heroBounds.maxZ)
+		);
+
+		let allowed = false;
+		for (const zone of allowedZones){
+			if (nextPos.x >= zone.minX && nextPos.x <= zone.maxX &&
+				nextPos.z >= zone.minZ && nextPos.z <= zone.maxZ){
+					allowed = true; break;
+				}
+		}
+		if (!allowed){
+			// fallback global showroom bounds
+			if (nextPos.x >= heroBounds.minX && nextPos.x <= heroBounds.maxX &&
+				nextPos.z >= heroBounds.minZ && nextPos.z <= heroBounds.maxZ){
+				allowed = true;
+			}
+		}
+
+		if (allowed){
+			humanoid.position.copy(nextPos);
+			if (moving){
+				const heading = Math.atan2(heroVelocity.x, heroVelocity.z);
+				const currentHeading = humanoid.userData.heading || 0;
+				const nextHeading = THREE.MathUtils.lerp(currentHeading, heading, 0.25);
+				humanoid.userData.heading = nextHeading;
+				humanoid.rotation.y = nextHeading;
+				// léger bounce corps
+				const bounce = 0.008 * Math.sin(t * 8);
+				humanoid.position.y = bounce;
+				// swing des jambes uniquement si pas d'animation GLTF
+				if (!gltfCharacter || useProceduralSwing){
+					const speed = heroVelocity.length();
+					const legAmp = Math.min(0.6, 0.2 + speed * 0.2);
+					if (humanoid.userData.legs){
+						humanoid.userData.legs.forEach((leg, i)=>{
+							leg.rotation.x = Math.sin(t*8 + i*Math.PI) * legAmp;
+						});
+					}
+				}
+			} else {
+				humanoid.position.y = 0;
+				if (!gltfCharacter || useProceduralSwing){
+					if (humanoid.userData.legs){ humanoid.userData.legs.forEach(l=> l.rotation.x = 0); }
+				}
+				heroVelocity.lerp(zeroVec, 0.1);
+			}
+		} else {
+			heroVelocity.multiplyScalar(0.6);
+		}
+
+		const zoneIdx = sections.findIndex((sec) => {
+			if (!sec.bounds) return false;
+			return humanoid.position.x >= sec.bounds.minX && humanoid.position.x <= sec.bounds.maxX &&
+				humanoid.position.z >= sec.bounds.minZ && humanoid.position.z <= sec.bounds.maxZ;
+		});
+		if (zoneIdx !== -1 && zoneIdx !== currentSection){
+			focusZone(zoneIdx);
+		}
+
+		desiredLook.set(humanoid.position.x, humanoid.position.y + 1.2, humanoid.position.z);
+		lookTarget.lerp(desiredLook, 0.15);
+
+		const backVec = new THREE.Vector3(Math.sin(camYaw), 0, Math.cos(camYaw)).multiplyScalar(cameraOffset.distance);
+		const camTarget = new THREE.Vector3(
+			humanoid.position.x,
+			humanoid.position.y + 1.2,
+			humanoid.position.z
+		);
+		const camPos = camTarget.clone().add(backVec);
+		camPos.y = humanoid.position.y + cameraOffset.height;
+		camera.position.lerp(camPos, cameraOffset.lag);
+		camera.lookAt(camTarget);
+
+		raycaster.setFromCamera(pointer, camera); const hits = raycaster.intersectObjects(interactiveObjects, true); interactiveObjects.forEach(o=>{ if (hits.length && hits[0].object===o){ gsap.to(o.scale, { x:1.08, y:1.08, z:1.08, duration:0.18 }); } else { gsap.to(o.scale, { x:1, y:1, z:1, duration:0.6 }); } });
+		if (particleGeo){ const arr = particleGeo.attributes.position.array; for (let i=0;i<particleCount;i++){ const idx=i*3+1; arr[idx] += Math.sin(t*0.4 + i)*0.0008; if (arr[idx] < 0.1) arr[idx] = 0.9 + Math.random()*2.4; } particleGeo.attributes.position.needsUpdate = true; }
+		renderer.render(scene, camera);
+		requestAnimationFrame(animate);
+	}
+	animate();
+	window.addEventListener('resize', onWindowResize, { passive:true });
+}
+
+export default { startExperience };
