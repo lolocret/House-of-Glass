@@ -5,6 +5,45 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
+// Fallback replies shared with backend; we fetch the JSON version when available.
+const moonRepliesDefault = {
+	entries: [
+		{
+			triggers: ["qui es", "toi", "assistant"],
+			response: "Je suis le guide de la Maison : je réponds avec les règles de l'expérience."
+		},
+		{
+			triggers: ["social", "réseau", "story", "post", "like", "dm"],
+			response: "Les signaux sociaux (likes, stories, DMs) servent à prédire humeur, opinions et influence. Réduis la géoloc et segmente tes audiences."
+		},
+		{
+			triggers: ["achat", "panier", "commerce", "abonnement", "prix"],
+			response: "Les paniers et abonnements calculent ton pouvoir d'achat et tes routines. Varie les moyens de paiement et purge l'historique d'achat."
+		},
+		{
+			triggers: ["trajet", "gps", "locali", "déplacement"],
+			response: "Quelques jours de GPS suffisent pour trouver domicile et lieux sensibles. Coupe la géoloc en tâche de fond et sépare profils pro/perso."
+		},
+		{
+			triggers: ["santé", "sommeil", "humeur", "sensibl", "coeur", "spo2"],
+			response: "Les données santé/sommeil sont sensibles : vérifie les permissions, désactive le partage tiers et conserve un export chiffré seulement si besoin."
+		},
+		{
+			triggers: ["rgpd", "droit", "contrôle", "export", "effacement", "suppression"],
+			response: "Tes leviers : accès/portabilité pour récupérer, rectification pour corriger, effacement pour supprimer, opposition pour bloquer la pub ciblée."
+		},
+		{
+			triggers: ["navig", "visiter", "guide"],
+			response: "Utilise la téléportation pour changer de pièce, ou marche avec ZQSD/flèches. Clique sur les panneaux pour déclencher les interactions."
+		}
+	],
+	default: "Parle-moi de réseaux, achats, trajets, santé/sensibles ou contrôle et je te répondrai."
+};
+let moonReplies = moonRepliesDefault;
+fetch('./moonReplies.json').then(r => r.ok ? r.json() : null).then(json => {
+	if (json && json.entries) { moonReplies = json; }
+}).catch(()=>{ /* reste sur la version embarquée */ });
+
 // The House of Glass — interactive infographic core
 // Exports: startExperience(opts) and speakLine(text)
 
@@ -1279,29 +1318,14 @@ function updateActionButton(slug){
 	}
 	function generateMoonReply(question = ''){
 		const q = (question || '').toLowerCase();
-		if (q.includes('qui es') || q.includes('toi') || q.includes('assistant')){
-			return "Je suis le guide locale. Je réponds hors ligne avec les infos de la Maison.";
+		if (!moonReplies || !moonReplies.entries) return moonReplies?.default || moonRepliesDefault.default;
+		for (const entry of moonReplies.entries){
+			if (!entry || !entry.triggers || !entry.response) continue;
+			for (const trig of entry.triggers){
+				if (q.includes(trig.toLowerCase())) return entry.response;
+			}
 		}
-		if (q.includes('social') || q.includes('réseau') || q.includes('story') || q.includes('post') || q.includes('like') || q.includes('dm')){
-			return "Les signaux sociaux (likes, stories, DMs) servent à prédire humeur, opinions et influence. Réduis la géoloc des stories et segmente tes audiences.";
-		}
-		if (q.includes('achat') || q.includes('panier') || q.includes('commerce') || q.includes('abonnement') || q.includes('prix')){
-			return "Les paniers et abonnements calculent ton pouvoir d'achat et tes routines. Varie les moyens de paiement et purge l'historique d'achat pour réduire le profilage.";
-		}
-		if (q.includes('trajet') || q.includes('gps') || q.includes('locali') || q.includes('déplacement')){
-			return "Quelques jours de GPS suffisent pour trouver domicile et lieux sensibles. Coupe la géoloc en tâche de fond et utilise des profils séparés pour les trajets pros/perso.";
-		}
-		if (q.includes('santé') || q.includes('sommeil') || q.includes('humeur') || q.includes('sensibl') || q.includes('coeur') || q.includes('spo2')){
-			return "Les données santé/sommeil sont sensibles : vérifie les permissions, désactive le partage tiers et garde un export chiffré si besoin.";
-		}
-		if (q.includes('rgpd') || q.includes('droit') || q.includes('contrôle') || q.includes('export') || q.includes('effacement') || q.includes('suppression')){
-			return "Tes leviers : accès/portabilité pour récupérer, rectification pour corriger, effacement pour supprimer, opposition pour bloquer les pubs ciblées.";
-		}
-		if (q.includes('navig') || q.includes('visiter') || q.includes('guide') ){
-			return "Utilise la téléportation pour changer de pièce, ou marche avec ZQSD/flèches. Clique sur les panneaux pour déclencher les interactions.";
-		}
-		// Réponse de secours neutre quand aucune correspondance explicite n'est trouvée.
-		return "Parle-moi de réseaux, achats, trajets, santé/sensibles ou contrôle et je te répondrai.";
+		return moonReplies.default || moonRepliesDefault.default;
 	}
 	async function askMoon(question){
 		// If no endpoint is provided (or set to "local"), stay fully offline.

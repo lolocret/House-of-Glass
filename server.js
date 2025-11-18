@@ -14,6 +14,7 @@ const hasOpenAiKey = Boolean(openai);
 const hasGeminiKey = Boolean(geminiApiKey);
 // Try a few candidate models in order (v1beta endpoint).
 const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-pro'];
+const moonReplies = require('./moonReplies.json');
 
 // Debug at startup: which provider is configured
 console.log('[moon] config', {
@@ -57,28 +58,14 @@ async function askGemini(question = 'Dis bonjour.') {
 
 function offlineReply(question = '') {
   const q = (question || '').toLowerCase();
-  if (q.includes('qui es') || q.includes('toi') || q.includes('assistant')) {
-    return "Je suis le guide de la Maison : je réponds avec les règles de l'expérience.";
+  if (!moonReplies || !moonReplies.entries) return moonReplies?.default || '';
+  for (const entry of moonReplies.entries) {
+    if (!entry || !entry.triggers || !entry.response) continue;
+    for (const trig of entry.triggers) {
+      if (q.includes(trig.toLowerCase())) return entry.response;
+    }
   }
-  if (q.includes('social') || q.includes('réseau') || q.includes('story') || q.includes('post') || q.includes('like') || q.includes('dm')) {
-    return "Les signaux sociaux (likes, stories, DMs) servent à prédire humeur, opinions et influence. Réduis la géoloc et segmente tes audiences.";
-  }
-  if (q.includes('achat') || q.includes('panier') || q.includes('commerce') || q.includes('abonnement') || q.includes('prix')) {
-    return "Les paniers et abonnements calculent ton pouvoir d'achat et tes routines. Varie les moyens de paiement et purge l'historique d'achat.";
-  }
-  if (q.includes('trajet') || q.includes('gps') || q.includes('locali') || q.includes('déplacement')) {
-    return "Quelques jours de GPS suffisent pour trouver domicile et lieux sensibles. Coupe la géoloc en tâche de fond et sépare profils pro/perso.";
-  }
-  if (q.includes('santé') || q.includes('sommeil') || q.includes('humeur') || q.includes('sensibl') || q.includes('coeur') || q.includes('spo2')) {
-    return "Les données santé/sommeil sont sensibles : vérifie les permissions, désactive le partage tiers et conserve un export chiffré seulement si besoin.";
-  }
-  if (q.includes('rgpd') || q.includes('droit') || q.includes('contrôle') || q.includes('export') || q.includes('effacement') || q.includes('suppression')) {
-    return "Tes leviers : accès/portabilité pour récupérer, rectification pour corriger, effacement pour supprimer, opposition pour bloquer la pub ciblée.";
-  }
-  if (q.includes('navig') || q.includes('visiter') || q.includes('guide')) {
-    return "Utilise la téléportation pour changer de pièce, ou marche avec ZQSD/flèches. Clique sur les panneaux pour déclencher les interactions.";
-  }
-  return "Parle-moi de réseaux, achats, trajets, santé/sensibles ou contrôle et je te répondrai.";
+  return moonReplies.default || '';
 }
 
 // Dans un vrai contexte, ajoute auth/rate-limit ici

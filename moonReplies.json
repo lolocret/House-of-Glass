@@ -1,0 +1,33 @@
+{
+  "entries": [
+    {
+      "triggers": ["qui es", "toi", "assistant"],
+      "response": "Je suis le guide de la Maison : je réponds avec les règles de l'expérience."
+    },
+    {
+      "triggers": ["social", "réseau", "story", "post", "like", "dm"],
+      "response": "Les signaux sociaux (likes, stories, DMs) servent à prédire humeur, opinions et influence. Réduis la géoloc et segmente tes audiences."
+    },
+    {
+      "triggers": ["achat", "panier", "commerce", "abonnement", "prix"],
+      "response": "Les paniers et abonnements calculent ton pouvoir d'achat et tes routines. Varie les moyens de paiement et purge l'historique d'achat."
+    },
+    {
+      "triggers": ["trajet", "gps", "locali", "déplacement"],
+      "response": "Quelques jours de GPS suffisent pour trouver domicile et lieux sensibles. Coupe la géoloc en tâche de fond et sépare profils pro/perso."
+    },
+    {
+      "triggers": ["santé", "sommeil", "humeur", "sensibl", "coeur", "spo2"],
+      "response": "Les données santé/sommeil sont sensibles : vérifie les permissions, désactive le partage tiers et conserve un export chiffré seulement si besoin."
+    },
+    {
+      "triggers": ["rgpd", "droit", "contrôle", "export", "effacement", "suppression"],
+      "response": "Tes leviers : accès/portabilité pour récupérer, rectification pour corriger, effacement pour supprimer, opposition pour bloquer la pub ciblée."
+    },
+    {
+      "triggers": ["navig", "visiter", "guide"],
+      "response": "Utilise la téléportation pour changer de pièce, ou marche avec ZQSD/flèches. Clique sur les panneaux pour déclencher les interactions."
+    }
+  ],
+  "default": "Parle-moi de réseaux, achats, trajets, santé/sensibles ou contrôle et je te répondrai."
+}
