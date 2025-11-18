@@ -20,9 +20,9 @@
   <div class="intro" id="intro">
     <div class="intro-card">
       <h1 class="title">The House of Glass</h1>
-      <p class="subtitle">An interactive poetic infographic about transparency</p>
-      <button id="enterBtn" class="enter">Enter the House</button>
-      <p class="hint">Click to enter — best experienced in a modern browser</p>
+      <p class="subtitle">Une infographie interactive sur l'emprunte numérique</p>
+      <button id="enterBtn" class="enter">Entrer dans la maison</button>
+      <p class="hint">Clique pour entrer — meilleure experience dans un naviguateur moderne.</p>
     </div>
   </div>
 
@@ -35,10 +35,10 @@
   <div class="info-bubble" id="moonBubble" aria-live="polite">
     <button class="info-bubble__close" id="moonBubbleClose" aria-label="Fermer">×</button>
     <h3>Assistant</h3>
-    <p class="info-bubble__hint">Pose ta question sur tes données ou la Maison.</p>
+    <p class="info-bubble__hint">Pose ta question sur tes données.</p>
     <div class="moon-chat">
       <div class="moon-chat__messages" id="moonChatMessages" role="log" aria-live="polite">
-        <div class="moon-chat__message moon-chat__message--assistant">Salut, je suis ton compagnon. Demande-moi comment les données révèlent ton profil ou comment naviguer ici.</div>
+        <div class="moon-chat__message moon-chat__message--assistant">Salut, je suis ton compagnon virtuel. Demande-moi ce que tu veux.</div>
       </div>
       <form class="moon-chat__form" id="moonChatForm">
         <input id="moonChatInput" name="message" type="text" placeholder="Ex : Que déduis-tu d’un trajet GPS ?" autocomplete="off" />
@@ -64,7 +64,7 @@
   </div>
 
   <div class="voice-toggle">
-    <button id="voiceToggle" aria-pressed="true">🔊 Voix ON</button>
+    <button id="voiceToggle" aria-pressed="true">🔊</button>
   </div>
 
   <div class="hud-bar" id="hudBar">
@@ -82,7 +82,7 @@
   <!-- You can replace ./assets/dramatic-pad.wav with another track if desired.
     Without this file the experience falls back to a synthesized pad. -->
 
-  <noscript>Ce démo nécessite JavaScript et un navigateur moderne prenant en charge les modules ES6.</noscript>
+  <noscript>Cette démo nécessite JavaScript et un navigateur moderne prenant en charge les modules ES6.</noscript>
 
   <script type="module">
     import { startExperience, speakLine } from './main.js';

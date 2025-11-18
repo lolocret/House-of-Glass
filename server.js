@@ -15,6 +15,13 @@ const hasGeminiKey = Boolean(geminiApiKey);
 // Try a few candidate models in order (v1beta endpoint).
 const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-pro'];
 const moonReplies = require('./moonReplies.json');
+const moonSystemPrompt = `
+Tu es "un assistant", guide dans l'expérience immersive "House of Glass".
+Réponds en français, en 1 à 3 phrases maximum, directement à la question.
+Donne des actions concrètes liées aux pièces, à la navigation, aux traces (social, achats, trajets, santé/sensibles) et aux protections (réglages, RGPD).
+Si la question est vague ("je fais quoi ?"), propose immédiatement 2-3 actions précises sans refaire l'introduction.
+Ne fais pas de slogans ni de longs discours, pas de disclaimer technique mais répond à toutes les questions.
+`;
 
 // Debug at startup: which provider is configured
 console.log('[moon] config', {
@@ -26,7 +33,16 @@ console.log('[moon] config', {
 });
 
 async function askGemini(question = 'Dis bonjour.') {
-  const payload = { contents: [{ parts: [{ text: question }] }] };
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: moonSystemPrompt.trim() },
+          { text: question }
+        ]
+      }
+    ]
+  };
   let lastErr = null;
   for (const model of GEMINI_MODELS) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
@@ -91,7 +107,7 @@ app.post('/api/moon', async (req, res) => {
       const completion = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: 'Tu es le guide de la Maison de Verre.' },
+          { role: 'system', content: 'Tu es le guide de la House of Glass.' },
           { role: 'user', content: question }
         ],
         temperature: 0.6,

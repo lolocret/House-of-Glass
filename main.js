@@ -56,7 +56,7 @@ const sections = [
 	{
 		id: 'hall',
 		label: "Hall d'entrée",
-		copy: "Traverse l'atrium et choisis ta prochaine pièce à explorer.",
+		copy: "Traverse le hall d'entrée et choisis ta prochaine pièce à explorer.",
 		slug: null,
 		center: { x: 0, z: 0 },
 		size: { w: 4.6, h: 4.6 },
@@ -196,14 +196,6 @@ const characterOptions = {
 };
 const defaultCharacterId = 'cameraman';
 
-const interactionState = {
-	social: [],
-	commerce: [],
-	mobility: null,
-	sensibles: [],
-	control: null
-};
-
 const socialPosts = [
 	{ label: "Story festival & amis", inference: "Profil culture + sociable", note: "Ciblage sorties nocturnes et partenariats événementiels." },
 	{ label: "Thread coup de gueule politique", inference: "Positionnement engagé", note: "Peut déclencher du contenu polarisé ou du microciblage militant." },
@@ -239,20 +231,6 @@ const controlActions = [
 	{ action: "Programmer des rappels de nettoyage", impact: "Tous les 90 jours tu purges recherches, historiques et paniers." },
 	{ action: "Segmenter tes identités (pseudo/email)", impact: "Évite la corrélation automatique entre achats, loisirs et santé." }
 ];
-
-function randomFrom(list){
-	return list[Math.floor(Math.random() * list.length)];
-}
-
-function pickSome(list, count){
-	const pool = [...list];
-	const result = [];
-	for (let i=0; i<count && pool.length; i++){
-		const idx = Math.floor(Math.random() * pool.length);
-		result.push(pool.splice(idx,1)[0]);
-	}
-	return result;
-}
 
 function alignMeshToGround(mesh, lift = 0){
 	// Align a mesh so its lowest point sits on y=0, with an optional lift (can be negative).
@@ -409,8 +387,7 @@ const defaultInfo = {
 	intro: "Clique sur une capsule de verre pour matérialiser ce que tu révèles.",
 	insights: [
 		"Chaque pièce correspond à une famille de données personnelles.",
-		"Les bulles se combinent pour alimenter un profil marketing complet.",
-		"Utilise la molette ou la navigation pour visiter tout le manoir."
+		"Utilise la molette ou la navigation pour visiter toute la maison de verre."
 	]
 };
 
@@ -1244,7 +1221,6 @@ function updateActionButton(slug){
 	function showUIOnce(){
 		if (uiShown) return;
 		const voiceToggle = document.getElementById('voiceToggle');
-		const teleportWrap = document.getElementById('teleport');
 		[infoPanel, hudBar].forEach(el=>{
 			if (!el) return;
 			el.style.opacity = '1';
