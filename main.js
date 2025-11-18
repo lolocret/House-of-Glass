@@ -468,21 +468,36 @@ function makeCanvasTexture(text, opts = {}){
 }
 
 function makeTiledTexture(opts = {}){
-	const size = opts.size || 256;
-	const colors = opts.colors || ['#7fcf9c', '#6abf8a'];
+	// Purple smooth ground with soft shadows
+	const size = opts.size || 512;
 	const canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size;
 	const ctx = canvas.getContext('2d');
-	ctx.fillStyle = colors[0]; ctx.fillRect(0,0,size,size);
-	ctx.fillStyle = colors[1];
-	for (let i=0;i<80;i++){
-		const x = Math.random()*size;
-		const y = Math.random()*size;
-		const r = 2 + Math.random()*6;
-		ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
-	}
+	// subtle radial gradient background
+	const grd = ctx.createRadialGradient(size*0.4, size*0.4, size*0.2, size*0.6, size*0.6, size*0.8);
+	grd.addColorStop(0, '#8b7dc3');
+	grd.addColorStop(1, '#7360a3');
+	ctx.fillStyle = grd;
+	ctx.fillRect(0,0,size,size);
+
+	// soft shadow blobs
+	const blobs = opts.blobs || [
+		{ x: 0.3, y: 0.35, r: 0.22, a: 0.18 },
+		{ x: 0.55, y: 0.45, r: 0.18, a: 0.16 },
+		{ x: 0.7, y: 0.3, r: 0.16, a: 0.14 }
+	];
+	blobs.forEach(b => {
+		const g = ctx.createRadialGradient(size*b.x, size*b.y, size*b.r*0.2, size*b.x, size*b.y, size*b.r);
+		g.addColorStop(0, `rgba(88,65,130,${b.a})`);
+		g.addColorStop(1, 'rgba(88,65,130,0)');
+		ctx.fillStyle = g;
+		ctx.beginPath();
+		ctx.arc(size*b.x, size*b.y, size*b.r, 0, Math.PI*2);
+		ctx.fill();
+	});
+
 	const tex = new THREE.CanvasTexture(canvas);
 	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-	tex.repeat.set(opts.repeatU || 8, opts.repeatV || 8);
+	tex.repeat.set(opts.repeatU || 1, opts.repeatV || 1);
 	tex.needsUpdate = true;
 	return tex;
 }
