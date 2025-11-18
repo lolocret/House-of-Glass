@@ -4,6 +4,8 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
 // Fallback replies shared with backend; we fetch the JSON version when available.
 const moonRepliesDefault = {
@@ -868,6 +870,46 @@ function addGlitchOverlay(){
 	return div;
 }
 
+function addGlassTitle(scene){
+	const loader = new FontLoader();
+	loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', (font)=>{
+		const geo = new TextGeometry('HOUSE OF GLASS', {
+			font,
+			size: 0.85,
+			height: 0.12,
+			curveSegments: 12,
+			bevelEnabled: true,
+			bevelThickness: 0.01,
+			bevelSize: 0.02,
+			bevelOffset: 0,
+			bevelSegments: 4
+		});
+		geo.computeBoundingBox();
+		const mat = new THREE.MeshPhysicalMaterial({
+			color: 0x9fd6ff,
+			emissive: 0x0e1824,
+			emissiveIntensity: 0.35,
+			roughness: 0.03,
+			metalness: 0.1,
+			transmission: 1.0,
+			opacity: 0.98,
+			transparent: true,
+			clearcoat: 0.85,
+			clearcoatRoughness: 0.05,
+			ior: 1.5,
+			thickness: 0.8,
+			reflectivity: 0.8,
+			attenuationColor: new THREE.Color(0x8dc3ff),
+			attenuationDistance: 6
+		});
+		const mesh = new THREE.Mesh(geo, mat);
+		geo.center();
+		mesh.position.set(0, 4.6, -8.5);
+		mesh.rotation.x = -0.08;
+		scene.add(mesh);
+	});
+}
+
 function addEnvironment(scene){
 	// gradient skydome teinté néon
 	const skyGeo = new THREE.SphereGeometry(80, 32, 32);
@@ -912,6 +954,7 @@ function addEnvironment(scene){
 	ground.rotation.x = -Math.PI/2;
 	ground.position.y = -0.02;
 	scene.add(ground);
+	addGlassTitle(scene);
 }
 
 function setupRenderer(){
@@ -1504,9 +1547,11 @@ function updateActionButton(slug){
 			return humanoid.position.x >= sec.bounds.minX && humanoid.position.x <= sec.bounds.maxX &&
 				humanoid.position.z >= sec.bounds.minZ && humanoid.position.z <= sec.bounds.maxZ;
 		});
-		if (zoneIdx !== -1 && zoneIdx !== currentSection){
-			focusZone(zoneIdx);
-		}
+			if (zoneIdx !== -1 && zoneIdx !== currentSection){
+				focusZone(zoneIdx);
+			} else if (zoneIdx === -1 && currentSection !== -1){
+				currentSection = -1;
+			}
 
 		desiredLook.set(humanoid.position.x, humanoid.position.y + 1.2, humanoid.position.z);
 		lookTarget.lerp(desiredLook, 0.15);
@@ -1541,16 +1586,16 @@ function updateActionButton(slug){
 			const hoverHit = hits.find(h => h.object && h.object.userData && h.object.userData.zoneHover !== undefined);
 			if (hoverHit) hoveredZoneIdx = hoverHit.object.userData.zoneHover;
 		}
-		const desiredLabelIdx = (hoveredZoneIdx !== null) ? hoveredZoneIdx : currentSection;
-		if (desiredLabelIdx !== lastLabelIdx && zones[desiredLabelIdx]){
-			attachZoneLabel(sections[desiredLabelIdx], zones[desiredLabelIdx]);
-			lastLabelIdx = desiredLabelIdx;
-		}
-		zones.forEach((z, i)=> {
-			if (!z) return;
-			const shouldShow = (i === currentSection) || (hoveredZoneIdx === i);
-			z.visible = shouldShow;
-		});
+			const desiredLabelIdx = (hoveredZoneIdx !== null) ? hoveredZoneIdx : (currentSection !== -1 ? currentSection : null);
+			if (desiredLabelIdx !== null && desiredLabelIdx !== lastLabelIdx && zones[desiredLabelIdx]){
+				attachZoneLabel(sections[desiredLabelIdx], zones[desiredLabelIdx]);
+				lastLabelIdx = desiredLabelIdx;
+			}
+			zones.forEach((z, i)=> {
+				if (!z) return;
+				const shouldShow = (currentSection !== -1 && i === currentSection) || (hoveredZoneIdx === i);
+				z.visible = shouldShow;
+			});
 		if (particleGeo){ const arr = particleGeo.attributes.position.array; for (let i=0;i<particleCount;i++){ const idx=i*3+1; arr[idx] += Math.sin(t*0.4 + i)*0.0008; if (arr[idx] < 0.1) arr[idx] = 0.9 + Math.random()*2.4; } particleGeo.attributes.position.needsUpdate = true; }
 		renderer.render(scene, camera);
 		requestAnimationFrame(animate);
