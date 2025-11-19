@@ -90,7 +90,7 @@ export function createHouseStructure(
 	});
 	const floor = new THREE.Mesh(
 		new THREE.PlaneGeometry(16, 12),
-		new THREE.MeshStandardMaterial({ color: 0x24162d, roughness: 0.3, metalness: 0.35 })
+		new THREE.MeshStandardMaterial({ color: 0x1d2c46, roughness: 0.18, metalness: 0.6 })
 	);
 	floor.rotation.x = -Math.PI / 2;
 	floor.position.z = -2;

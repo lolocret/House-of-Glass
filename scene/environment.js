@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+import { makeTiledTexture } from './textures.js';
 
 function addGlassTitle(scene) {
 	const loader = new FontLoader();
@@ -36,7 +37,7 @@ function addGlassTitle(scene) {
 		});
 		const mesh = new THREE.Mesh(geo, mat);
 		geo.center();
-		mesh.position.set(0, 4.6, -8.5);
+		mesh.position.set(0, 3.2, -8.5);
 		mesh.rotation.x = -0.08;
 		scene.add(mesh);
 	});
@@ -47,8 +48,8 @@ export function addEnvironment(scene) {
 	const skyMat = new THREE.ShaderMaterial({
 		side: THREE.BackSide,
 		uniforms: {
-			topColor: { value: new THREE.Color(0x1b1230) },
-			bottomColor: { value: new THREE.Color(0x2c143d) },
+			topColor: { value: new THREE.Color(0x142a4d) },
+			bottomColor: { value: new THREE.Color(0x0a0f1e) },
 			offset: { value: 10 },
 			exponent: { value: 1.2 }
 		},
@@ -77,9 +78,23 @@ export function addEnvironment(scene) {
 	const sky = new THREE.Mesh(skyGeo, skyMat);
 	scene.add(sky);
 
+	const groundTex = makeTiledTexture({
+		size: 1024,
+		repeatU: 18,
+		repeatV: 18,
+		lineColor: '#3cf5ff',
+		bgInner: '#070b16',
+		bgOuter: '#0f1325',
+		gridSpacing: 1024 / 14
+	});
 	const ground = new THREE.Mesh(
 		new THREE.PlaneGeometry(200, 200),
-		new THREE.MeshBasicMaterial({ color: '#120b1d', fog: false })
+		new THREE.MeshStandardMaterial({
+			color: '#200d23ff',
+			map: groundTex,
+			roughness: 0.8,
+			metalness: 0.4
+		})
 	);
 	ground.rotation.x = -Math.PI / 2;
 	ground.position.y = -0.02;

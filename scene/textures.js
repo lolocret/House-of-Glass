@@ -27,18 +27,31 @@ export function makeTiledTexture(opts = {}) {
 	canvas.height = size;
 	const ctx = canvas.getContext('2d');
 
-	const grd = ctx.createRadialGradient(
-		size * 0.5,
-		size * 0.5,
-		size * 0.05,
-		size * 0.5,
-		size * 0.5,
-		size * 0.9
-	);
-	grd.addColorStop(0, '#140c18');
-	grd.addColorStop(1, '#0b0610');
+	const bgInner = opts.bgInner || '#070b16';
+	const bgOuter = opts.bgOuter || '#0f1325';
+	const grd = ctx.createRadialGradient(size * 0.5, size * 0.5, size * 0.05, size * 0.5, size * 0.5, size * 0.9);
+	grd.addColorStop(0, bgInner);
+	grd.addColorStop(1, bgOuter);
 	ctx.fillStyle = grd;
 	ctx.fillRect(0, 0, size, size);
+
+	// Neon grid overlay for a digital feel
+	const gridSpacing = opts.gridSpacing || size / 12;
+	ctx.strokeStyle = opts.lineColor || '#3cf5ff';
+	ctx.globalAlpha = 0.22;
+	ctx.lineWidth = opts.lineWidth || 1.5;
+	for (let x = 0; x <= size; x += gridSpacing) {
+		ctx.beginPath();
+		ctx.moveTo(x + 0.5, 0);
+		ctx.lineTo(x + 0.5, size);
+		ctx.stroke();
+	}
+	for (let y = 0; y <= size; y += gridSpacing) {
+		ctx.beginPath();
+		ctx.moveTo(0, y + 0.5);
+		ctx.lineTo(size, y + 0.5);
+		ctx.stroke();
+	}
 
 	const tex = new THREE.CanvasTexture(canvas);
 	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
