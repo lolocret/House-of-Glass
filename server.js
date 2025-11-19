@@ -20,6 +20,8 @@ Tu es "un assistant", guide dans l'expérience immersive "House of Glass".
 Réponds en français, en 1 à 5 phrases maximum, directement à la question.
 Ne fais pas de slogans ni de longs discours, mais répond à toutes les questions.
 `;
+const HISTORY_LIMIT = 6; // nombre de tours conservés par session
+const conversations = new Map(); // sessionId -> [{ role:'user'|'assistant', content }]
 
 // Debug at startup: which provider is configured
 console.log('[moon] config', {
@@ -30,16 +32,36 @@ console.log('[moon] config', {
   models: GEMINI_MODELS
 });
 
-async function askGemini(question = 'Dis bonjour.') {
+function getHistory(sessionId) {
+  if (!sessionId) return [];
+  return conversations.get(sessionId) || [];
+}
+
+function rememberMessage(sessionId, role, content) {
+  if (!sessionId || !content) return;
+  const normalizedRole = role === 'assistant' ? 'assistant' : 'user';
+  const arr = conversations.get(sessionId) || [];
+  arr.push({ role: normalizedRole, content });
+  const maxEntries = HISTORY_LIMIT * 2;
+  if (arr.length > maxEntries) arr.splice(0, arr.length - maxEntries);
+  conversations.set(sessionId, arr);
+}
+
+async function askGemini(question = 'Dis bonjour.', sessionId = 'default') {
+  const history = getHistory(sessionId);
+  const contents = history.map((msg) => ({
+    role: msg.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: msg.content }]
+  }));
+  const safeQuestion = question || 'Dis bonjour.';
+  if (!history.length || history[history.length - 1].role !== 'user') {
+    contents.push({ role: 'user', parts: [{ text: safeQuestion }] });
+  }
   const payload = {
-    contents: [
-      {
-        parts: [
-          { text: moonSystemPrompt.trim() },
-          { text: question }
-        ]
-      }
-    ]
+    contents,
+    systemInstruction: {
+      parts: [{ text: moonSystemPrompt.trim() }]
+    }
   };
   let lastErr = null;
   for (const model of GEMINI_MODELS) {
@@ -84,45 +106,68 @@ function offlineReply(question = '') {
 
 // Dans un vrai contexte, ajoute auth/rate-limit ici
 app.post('/api/moon', async (req, res) => {
-  const { question = '' } = req.body || {};
+  const { question = '', sessionId: bodySessionId } = req.body || {};
+  const sessionId =
+    (typeof bodySessionId === 'string' && bodySessionId.trim()) ||
+    req.headers['x-client-session'] ||
+    req.ip ||
+    'default';
+  const query = (question || '').trim();
+  if (query) rememberMessage(sessionId, 'user', query);
 
   // Short-circuit to offline mode when no key is configured.
   if (!hasOpenAiKey && !hasGeminiKey) {
-    return res.json({ answer: offlineReply(question) });
+    const answer = offlineReply(query);
+    rememberMessage(sessionId, 'assistant', answer);
+    return res.json({ answer });
   }
 
   try {
     if (hasGeminiKey) {
-      console.log('[moon] provider=gemini', { models: GEMINI_MODELS, q: question });
-      const answer = await askGemini(question || 'Dis bonjour.');
-      if (answer) return res.json({ answer });
+      console.log('[moon] provider=gemini', { models: GEMINI_MODELS, q: query });
+      const answer = await askGemini(query || 'Dis bonjour.', sessionId);
+      if (answer) {
+        rememberMessage(sessionId, 'assistant', answer);
+        return res.json({ answer });
+      }
       // If empty, fallback to offline.
-      return res.json({ answer: offlineReply(question) });
+      const fallback = offlineReply(query);
+      rememberMessage(sessionId, 'assistant', fallback);
+      return res.json({ answer: fallback });
     }
 
     if (hasOpenAiKey) {
-      console.log('[moon] provider=openai', { q: question });
+      console.log('[moon] provider=openai', { q: query });
+      const history = getHistory(sessionId).map((msg) => ({
+        role: msg.role,
+        content: msg.content
+      }));
       const completion = await openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: 'Tu es le guide de la House of Glass.' },
-          { role: 'user', content: question }
+          { role: 'system', content: moonSystemPrompt.trim() },
+          ...history
         ],
         temperature: 0.6,
         max_tokens: 200
       });
       const answer = completion.choices?.[0]?.message?.content?.trim() || "Je n'ai pas trouvé de réponse.";
+      rememberMessage(sessionId, 'assistant', answer);
       return res.json({ answer });
     }
 
     // If no provider hit, return offline.
-    return res.json({ answer: offlineReply(question) });
+    const defaultAnswer = offlineReply(query);
+    rememberMessage(sessionId, 'assistant', defaultAnswer);
+    return res.json({ answer: defaultAnswer });
   } catch (err) {
     const status = err?.status || err?.response?.status || 500;
     const detail = err?.response?.data?.error?.message || err.message || 'Erreur inconnue';
     console.error('Moon API error', status, detail);
     // Keep UX smooth: always return 200 with a concise local reply.
-    res.json({ answer: offlineReply(question) });
+    const fallback = offlineReply(query);
+    rememberMessage(sessionId, 'assistant', fallback);
+    res.json({ answer: fallback });
   }
 });
 

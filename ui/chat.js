@@ -10,6 +10,7 @@ export function initMoonChat({
 	let moonReplies = moonRepliesDefault;
 	let moonChatTypingNode = null;
 	let moonBubbleVisible = false;
+	let sessionId = null;
 
 	fetch('./moonReplies.json')
 		.then((r) => (r.ok ? r.json() : null))
@@ -19,6 +20,25 @@ export function initMoonChat({
 		.catch(() => {
 			// stay on embedded version
 		});
+
+	function resolveSessionId() {
+		if (sessionId) return sessionId;
+		try {
+			const storage = window.localStorage;
+			const key = 'hog.moonSession';
+			const existing = storage?.getItem(key);
+			if (existing) {
+				sessionId = existing;
+				return sessionId;
+			}
+			sessionId = `hog-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+			storage?.setItem(key, sessionId);
+			return sessionId;
+		} catch (err) {
+			sessionId = `hog-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+			return sessionId;
+		}
+	}
 
 	function toggleMoonBubble(show) {
 		if (!moonBubble) return;
@@ -83,7 +103,7 @@ export function initMoonChat({
 			const res = await fetch(endpoint, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ question })
+				body: JSON.stringify({ question, sessionId: resolveSessionId() })
 			});
 			const payload = await res.json().catch(() => ({}));
 			if (payload && payload.answer) return payload.answer;

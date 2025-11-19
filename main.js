@@ -64,6 +64,12 @@ let moonMixer = null;
 let moonMesh = null;
 const moonFollowOffset = new THREE.Vector3(0.8, 1.8, -1.2);
 const moonTarget = new THREE.Vector3();
+let heroY = 0;
+let heroYVel = 0;
+const gravity = -9.8;
+const jumpStrength = 4.2;
+let jumpActive = false;
+let lastBounce = 0;
 
 const keyBindings = {
 	ArrowUp: 'forward',
@@ -71,6 +77,19 @@ const keyBindings = {
 	ArrowLeft: 'left',
 	ArrowRight: 'right'
 };
+
+function isTypingTarget(target) {
+	if (!target) return false;
+	if (target.isContentEditable) return true;
+	const tag = target.tagName || '';
+	if (tag === 'TEXTAREA') return !target.readOnly && !target.disabled;
+	if (tag === 'INPUT') {
+		const type = (target.type || 'text').toLowerCase();
+		const textLike = ['text', 'search', 'email', 'password', 'url', 'tel', 'number'];
+		return !target.readOnly && !target.disabled && (textLike.includes(type) || type === '');
+	}
+	return false;
+}
 
 function handleMoveKey(e, isDown) {
 	const dir = keyBindings[e.code];
@@ -83,6 +102,12 @@ function handleMoveKey(e, isDown) {
 function resetMovement() {
 	Object.keys(moveState).forEach((k) => (moveState[k] = false));
 	heroVelocity.set(0, 0, 0);
+}
+
+function tryJump() {
+	if (jumpActive || heroY > 0.01) return;
+	jumpActive = true;
+	heroYVel = jumpStrength;
 }
 
 export function speakLine(text, voice = null) {
@@ -543,8 +568,23 @@ export async function startExperience(opts = {}) {
 			}
 		})
 	);
-	window.addEventListener('keydown', (e) => handleMoveKey(e, true));
-	window.addEventListener('keyup', (e) => handleMoveKey(e, false));
+	window.addEventListener('keydown', (e) => {
+		if (isTypingTarget(e.target)) return;
+		if (e.code === 'Space') {
+			e.preventDefault();
+			tryJump();
+			return;
+		}
+		handleMoveKey(e, true);
+	});
+	window.addEventListener('keyup', (e) => {
+		if (isTypingTarget(e.target)) return;
+		if (e.code === 'Space') {
+			e.preventDefault();
+			return;
+		}
+		handleMoveKey(e, false);
+	});
 
 	camera.lookAt(lookTarget);
 	clock = new THREE.Clock();
@@ -599,6 +639,7 @@ export async function startExperience(opts = {}) {
 			}
 		}
 
+		let bounce = 0;
 		if (allowed) {
 			humanoid.position.copy(nextPos);
 			if (moving) {
@@ -611,8 +652,7 @@ export async function startExperience(opts = {}) {
 				const nextHeading = THREE.MathUtils.lerp(currentHeading, heading, 0.25);
 				humanoid.userData.heading = nextHeading;
 				humanoid.rotation.y = nextHeading;
-				const bounce = 0.008 * Math.sin(t * 8);
-				humanoid.position.y = bounce;
+				bounce = 0.008 * Math.sin(t * 8);
 				if (!gltfCharacter || useProceduralSwing) {
 					const speed = heroVelocity.length();
 					const legAmp = Math.min(0.6, 0.2 + speed * 0.2);
@@ -627,7 +667,6 @@ export async function startExperience(opts = {}) {
 					gltfCharacter.visible = false;
 					gltfCharacterIdle.visible = true;
 				}
-				humanoid.position.y = 0;
 				if (!gltfCharacter || useProceduralSwing) {
 					if (humanoid.userData.legs) humanoid.userData.legs.forEach((l) => (l.rotation.x = 0));
 				}
@@ -636,6 +675,17 @@ export async function startExperience(opts = {}) {
 		} else {
 			heroVelocity.multiplyScalar(0.6);
 		}
+		lastBounce = bounce;
+
+		heroYVel += gravity * dt;
+		heroY += heroYVel * dt;
+		if (heroY <= 0) {
+			heroY = 0;
+			heroYVel = 0;
+			jumpActive = false;
+		}
+		const visualY = heroY + (!jumpActive ? lastBounce : 0);
+		humanoid.position.y = visualY;
 
 		const zoneIdx = sections.findIndex((sec) => {
 			if (!sec.bounds) return false;
