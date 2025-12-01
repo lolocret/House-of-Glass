@@ -547,8 +547,7 @@ export const defaultInfo = {
 	title: "Commence par une pièce",
 	intro: "Déplace-toi dans une pièce et clique sur une capsule de verre pour tester un scénario.",
 	insights: [
-		"Chaque pièce correspond à une famille de données personnelles (réseaux, achats, déplacements, données sensibles, contrôle).",
-		"Tes choix ne sont pas enregistrés en vrai, ils servent uniquement à illustrer ce qu’un système pourrait déduire."
+		"Chaque pièce correspond à une famille de données personnelles (réseaux, achats, tracking, géolocalisation, archives).",
 	]
 };
 
