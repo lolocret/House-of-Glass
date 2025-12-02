@@ -17,7 +17,7 @@
    - Windows : clic droit > « Ouvrir dans le terminal » (ou PowerShell dans le dossier).  
 4) Installe les dépendances (attends la fin, cela peut prendre 1–2 minutes) :  
    `npm install`  
-5) Crée le fichier `.env` (dans le dossier) et ajoute ta clé privée :  
+5) Ajoute ta clé privée dans `.env` (dans le dossier) :  
    `GEMINI_API_KEY=VOTRE_CLE_ICI`  
    Ne partage pas cette clé. Sauvegarde.  
 6) Lance l’appli :  
@@ -33,7 +33,7 @@
    `cd House-of-Glass`  
 4) Installe les dépendances :  
    `npm install`  
-5) Crée `.env` avec ta clé (ne la publie pas) :  
+5) Colle ta clé dans `.env`  (ne la publie pas) :  
    `GEMINI_API_KEY=VOTRE_CLE_ICI`  
 6) Lance :  
    `npm start`  
