@@ -1,43 +1,47 @@
-# House of Glass — Guide et API Agent
+# Guide d’installation débutants (macOS / Windows)
 
-Expérience interactive en Three.js avec un compagnon qui répond via une API locale (Gemini) et un fallback hors-ligne partagé.
+## 0. Prérequis (5 min)
+1) Installe Node.js (version LTS) depuis https://nodejs.org (suivre l’installeur comme un logiciel classique).  
+2) Ouvre un terminal :  
+   - macOS : Applications > Utilitaires > Terminal  
+   - Windows : Démarrer > taper “cmd” ou “PowerShell”  
+3) Vérifie que Node est bien là :  
+   `node -v` puis `npm -v`  
+   Si des numéros s’affichent, c’est OK.
 
-## Démarrage rapide
-```bash
-npm install
-npm start   # sert l'app et l'API sur http://localhost:3000
-```
-Ouvre ensuite `http://localhost:3000` dans le navigateur.
+## Option A — Sans git (téléchargement ZIP)
+1) Télécharge le ZIP : sur GitHub, bouton vert « Code » > Download ZIP.  
+2) Dézippe : fais un double-clic sur le ZIP et ouvre le dossier `House-of-Glass`.  
+3) Ouvre un terminal DANS ce dossier :  
+   - macOS : clic droit dans le dossier > Services > « Nouveau Terminal dans le dossier » (ou ouvre Terminal et `cd` jusqu’au dossier).  
+   - Windows : clic droit > « Ouvrir dans le terminal » (ou PowerShell dans le dossier).  
+4) Installe les dépendances (attends la fin, cela peut prendre 1–2 minutes) :  
+   `npm install`  
+5) Crée le fichier `.env` (dans le dossier) et ajoute ta clé privée :  
+   `GEMINI_API_KEY=VOTRE_CLE_ICI`  
+   Ne partage pas cette clé. Sauvegarde.  
+6) Lance l’appli :  
+   `npm start`  
+   Tu dois voir une ligne type `App running on http://localhost:3000`.  
+7) Ouvre ton navigateur sur `http://localhost:3000`, clique sur « Entrer ».
 
-## Variables d’environnement (.env)
-```
-GEMINI_API_KEY=...   # clé Google Generative Language API
-```
-Si aucune clé n’est fournie ou si l’API échoue, le bot répond avec le fallback local.
+## Option B — Avec git clone (si git installé)
+1) Vérifie/installe git : https://git-scm.com/downloads  
+2) Clone le dépôt :  
+   `git clone https://github.com/lolocret/House-of-Glass.git`  
+3) Entre dans le dossier :  
+   `cd House-of-Glass`  
+4) Installe les dépendances :  
+   `npm install`  
+5) Crée `.env` avec ta clé (ne la publie pas) :  
+   `GEMINI_API_KEY=VOTRE_CLE_ICI`  
+6) Lance :  
+   `npm start`  
+7) Navigue sur `http://localhost:3000` et clique sur « Entrer » pour démarrer House of Glass et discuter avec Moon.
 
-## API Moon
-- Endpoint : `POST /api/moon`
-- Body : `{"question": "texte libre"}`
-- Réponse : `{"answer": "réponse en français"}` (toujours 200, même en fallback).
-
-Test rapide :
-```bash
-curl -X POST http://localhost:3000/api/moon \
-  -H "Content-Type: application/json" \
-  -d '{"question":"test"}'
-```
-
-## Front (main.js)
-- L’endpoint est lu via `data-moon-api` sur `<body>` (défaut `/api/moon`). Mettre `local` pour forcer l’offline.
-- En cas d’erreur API ou d’absence d’endpoint, le front bascule sur les réponses locales (`moonReplies.json`).
-- `startExperience()` initialise la scène et doit être déclenchée après un geste utilisateur (bouton Entrer).
-
-## Fichiers clés
-- `server.js` : backend Express, appels Gemini, fallback commun.
-- `moonReplies.json` : déclencheurs + réponses de secours (partagé front/back).
-- `main.js` : scène Three.js, navigation, chat côté client.
-- `style.css` : styles et HUD.
-
-## Notes
-- Aucune dépendance réseau n’est nécessaire si tu gardes `data-moon-api="local"` ou sans clé.
-- Le compagnon répond en français, concis (1–3 phrases), centré sur les données perso, la navigation et les protections (RGPD, réglages).***
+## Dépannage rapide
+- `npm` introuvable : rouvre le terminal après l’installation ou réinstalle Node.js (LTS).  
+- Port 3000 déjà utilisé : ferme l’appli en cours ou crée `.env` avec `PORT=3001`, puis relance `npm start`.  
+- Clé manquante/invalide : corrige `.env`, sauvegarde, relance `npm start` (sans clé, Moon répond en mode local).  
+- Page blanche ou erreur JS : recharge la page (Ctrl/Cmd + R) et vérifie la console du navigateur.  
+- Si rien ne s’affiche dans le terminal : assure-toi d’être dans le bon dossier (le répertoire contenant `package.json`).
