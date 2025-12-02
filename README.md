@@ -5,7 +5,7 @@ Expérience interactive en Three.js avec un compagnon qui répond via une API lo
 ## Démarrage rapide
 ```bash
 npm install
-npm run dev:server   # sert l'app et l'API sur http://localhost:3000
+npm start   # sert l'app et l'API sur http://localhost:3000
 ```
 Ouvre ensuite `http://localhost:3000` dans le navigateur.
 
